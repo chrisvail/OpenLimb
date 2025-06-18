@@ -70,59 +70,48 @@ def GenerateRandomLimb(filename, n_samples):
     # component[8] = random.choice(np.linspace(-0.798154129842514 , 0.802807003549, 100))
     # component[9] = random.choice(np.linspace(-0.7353096205329 , 0.95283973472981, 100))
     
-    
+    minima = np.array([
+        -14.80692194113721,
+        -5.37869110537926,
+        -3.996990835549319,
+        -4.05537984190567,
+        -2.403525754650053,
+        -1.854646894835898,
+        -2.13215613028021,
+        -1.197319576810893,
+        -0.798154129842514,
+        -0.7353096205329
+    ])
 
-    component[0] = scale_range(np.random.rand(n_samples), -14.80692194113721 , 25.4537448635005)
-    component[1] = scale_range(np.random.rand(n_samples), -5.37869110537926 , 10.06971435469401)
-    component[2] = scale_range(np.random.rand(n_samples), -3.996990835549319 , 4.12168595787859)
-    component[3] = scale_range(np.random.rand(n_samples), -4.05537984190567 , 4.24308399616669)
-    component[4] = scale_range(np.random.rand(n_samples), -2.403525754650053 , 4.73074159745632)
-    component[5] = scale_range(np.random.rand(n_samples), -1.854646894835898 , 2.390247129446665)
-    component[6] = scale_range(np.random.rand(n_samples), -2.13215613028021 , 2.19420856255569)
-    component[7] = scale_range(np.random.rand(n_samples), -1.197319576810893 , 1.221847275562656)
-    component[8] = scale_range(np.random.rand(n_samples), -0.798154129842514 , 0.802807003549)
-    component[9] = scale_range(np.random.rand(n_samples), -0.7353096205329 , 0.95283973472981)
-    component = np.transpose(component)
+    maxima = np.array([
+        25.4537448635005,
+        10.06971435469401,
+        4.12168595787859,
+        4.24308399616669,
+        4.73074159745632,
+        2.390247129446665,
+        2.19420856255569,
+        1.221847275562656,
+        0.802807003549,
+        0.95283973472981
+    ])
 
+    component = scale_range(np.random.rand(n_samples, 10), minima, maxima)
 
     pickled_model = pickle.load(open('/opt/app/OpenLimbTT/version-2023-06/LR.pkl', 'rb'))
-    # pickled_model.predict(component)
-
-    newcomponent = pickled_model.predict(component)[0,:]
+    newcomponent = pickled_model.predict(component)
 
     X = np.load('/opt/app/OpenLimbTT/version-2023-06/Components.npy')
 
-    print(f"{X.shape=}    {component.shape=}    {pickled_model.predict(component).shape=}")
-
-    mode1 = X[0,:]
-    mode2 = X[1,:]
-    mode3 = X[2,:]
-    mode4 = X[3,:]
-    mode5 = X[4,:]
-    mode6 = X[5,:]
-    mode7 = X[6,:]
-    mode8 = X[7,:]
-    mode9 = X[8,:]
-    mode10 = X[9,:]
-    synthetic = copy.deepcopy(mean)
-    r = np.shape(mean.vert)[0]
-
-    synthetic.vert = mean.vert + (mode1*newcomponent[0]).reshape([r,3]) + (mode2*newcomponent[1]).reshape([r,3]) + (mode3*newcomponent[2]).reshape([r,3]) + (mode4*newcomponent[3]).reshape([r,3]) 
-    synthetic.vert = synthetic.vert + (mode5*newcomponent[4]).reshape([r,3])
-    synthetic.vert = synthetic.vert + (mode6*newcomponent[5]).reshape([r,3]) 
-    synthetic.vert = synthetic.vert + (mode7*newcomponent[6]).reshape([r,3])
-    #synthetic.vert = synthetic.vert + (mode8*newcomponent[7]).reshape([r,3]) 
-    synthetic.vert = synthetic.vert + (mode9*newcomponent[8]).reshape([r,3])
-    synthetic.vert = synthetic.vert + (mode10*newcomponent[9]).reshape([r,3])
+    verts = copy.deepcopy(mean.vert)[None] + np.sum((newcomponent[..., None]*X[None]).reshape(n_samples, 10, mean.vert.shape[0], 3), axis=1)
 
     #scale factor =  random.choice(np.linspace(342.8, 439.8 , 100))
     #synthetic.vert = (synthetic.vert)* (scale factor)
 
-    i = 1
-    while os.path.exists(filename.format(i)):
-        i += 1
-
-    synthetic.save(filename.format(i))
+    synthetic = copy.deepcopy(mean)
+    for i, vert_pos in enumerate(verts):
+        synthetic.vert = vert_pos
+        synthetic.save(filename.format(i))
 
 
 def scale_range(x, min, max):
@@ -130,4 +119,4 @@ def scale_range(x, min, max):
 
 
 if __name__ == "__main__":
-    GenerateRandomLimb("./stls/limb_{:05d}.stl", 5)
+    GenerateRandomLimb("./stls/limb_{:05d}.stl", 50)
