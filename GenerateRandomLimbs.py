@@ -54,31 +54,45 @@ import copy
 import pickle
 
 
-def GenerateRandomLimb(filename):
-    print(os.getcwd())
+def GenerateRandomLimb(filename, n_samples):
     mean = AmpObject('/opt/app/OpenLimbTT/version-2023-06/Mean_Limb_Shape.stl', unify=False)
 
-    component = np.zeros([10,1])
+    component = np.zeros([10, n_samples])
 
-    component[0] = random.choice(np.linspace(-14.80692194113721 , 25.4537448635005, 100))
-    component[1] = random.choice(np.linspace(-5.37869110537926 , 10.06971435469401, 100))
-    component[2] = random.choice(np.linspace(-3.996990835549319 , 4.12168595787859, 100))
-    component[3] = random.choice(np.linspace(-4.05537984190567 , 4.24308399616669, 100))
-    component[4] = random.choice(np.linspace(-2.403525754650053 , 4.73074159745632, 100))
-    component[5] = random.choice(np.linspace(-1.854646894835898 , 2.390247129446665, 100))
-    component[6] = random.choice(np.linspace(-2.13215613028021 , 2.19420856255569, 100))
-    component[7] = random.choice(np.linspace(-1.197319576810893 , 1.221847275562656, 100))
-    component[8] = random.choice(np.linspace(-0.798154129842514 , 0.802807003549, 100))
-    component[9] = random.choice(np.linspace(-0.7353096205329 , 0.95283973472981, 100))
+    # component[0] = random.choice(np.linspace(-14.80692194113721 , 25.4537448635005, 100))
+    # component[1] = random.choice(np.linspace(-5.37869110537926 , 10.06971435469401, 100))
+    # component[2] = random.choice(np.linspace(-3.996990835549319 , 4.12168595787859, 100))
+    # component[3] = random.choice(np.linspace(-4.05537984190567 , 4.24308399616669, 100))
+    # component[4] = random.choice(np.linspace(-2.403525754650053 , 4.73074159745632, 100))
+    # component[5] = random.choice(np.linspace(-1.854646894835898 , 2.390247129446665, 100))
+    # component[6] = random.choice(np.linspace(-2.13215613028021 , 2.19420856255569, 100))
+    # component[7] = random.choice(np.linspace(-1.197319576810893 , 1.221847275562656, 100))
+    # component[8] = random.choice(np.linspace(-0.798154129842514 , 0.802807003549, 100))
+    # component[9] = random.choice(np.linspace(-0.7353096205329 , 0.95283973472981, 100))
+    
+    
+
+    component[0] = scale_range(np.random.rand(n_samples), -14.80692194113721 , 25.4537448635005)
+    component[1] = scale_range(np.random.rand(n_samples), -5.37869110537926 , 10.06971435469401)
+    component[2] = scale_range(np.random.rand(n_samples), -3.996990835549319 , 4.12168595787859)
+    component[3] = scale_range(np.random.rand(n_samples), -4.05537984190567 , 4.24308399616669)
+    component[4] = scale_range(np.random.rand(n_samples), -2.403525754650053 , 4.73074159745632)
+    component[5] = scale_range(np.random.rand(n_samples), -1.854646894835898 , 2.390247129446665)
+    component[6] = scale_range(np.random.rand(n_samples), -2.13215613028021 , 2.19420856255569)
+    component[7] = scale_range(np.random.rand(n_samples), -1.197319576810893 , 1.221847275562656)
+    component[8] = scale_range(np.random.rand(n_samples), -0.798154129842514 , 0.802807003549)
+    component[9] = scale_range(np.random.rand(n_samples), -0.7353096205329 , 0.95283973472981)
     component = np.transpose(component)
-    #%%
+
 
     pickled_model = pickle.load(open('/opt/app/OpenLimbTT/version-2023-06/LR.pkl', 'rb'))
-    pickled_model.predict(component)
+    # pickled_model.predict(component)
 
     newcomponent = pickled_model.predict(component)[0,:]
 
     X = np.load('/opt/app/OpenLimbTT/version-2023-06/Components.npy')
+
+    print(f"{X.shape=}    {component.shape=}    {pickled_model.predict(component).shape=}")
 
     mode1 = X[0,:]
     mode2 = X[1,:]
@@ -104,33 +118,16 @@ def GenerateRandomLimb(filename):
     #scale factor =  random.choice(np.linspace(342.8, 439.8 , 100))
     #synthetic.vert = (synthetic.vert)* (scale factor)
 
-    # synthetic.addActor()
-    # win = vtkRenWin()
-    # win.setnumViewports(1)
-    # win.setBackground([1,1,1])
-    # win.setView([0, -1, 0], 0)
-    # win.SetSize(512, 512)
-    # win.Modified()
-    # win.OffScreenRenderingOn()
-    # win.renderActors([synthetic.actor])
-    # win.Render()
-    # win.rens[0].GetActiveCamera().Azimuth(0)
-    # win.rens[0].GetActiveCamera().Elevation(0)
-    # win.rens[0].GetActiveCamera().SetParallelProjection(False)
-    # win.Render()
-    # im = win.getImage()
-
-    # plt.axis('off')
-    # plt.imshow(im, interpolation='bicubic')
-    # plt.show()
-
     i = 1
-    while os.path.exists(filename % i):
+    while os.path.exists(filename.format(i)):
         i += 1
 
-    synthetic.save(filename % i)
+    synthetic.save(filename.format(i))
+
+
+def scale_range(x, min, max):
+    return x*(max - min) + min
 
 
 if __name__ == "__main__":
-    for i in range(50):
-        GenerateRandomLimb("./stls/limb_%s.stl")
+    GenerateRandomLimb("./stls/limb_{:05d}.stl", 5)
