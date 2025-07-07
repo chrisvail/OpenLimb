@@ -52,9 +52,10 @@ import os
 import random
 import copy
 import pickle
+import argparse
 
 
-def GenerateRandomLimb(filename, n_samples):
+def GenerateRandomLimb(file_path, n_samples):
     mean = AmpObject('/opt/app/OpenLimbTT/version-2023-06/Mean_Limb_Shape.stl', unify=False)
 
     component = np.zeros([10, n_samples])
@@ -108,10 +109,13 @@ def GenerateRandomLimb(filename, n_samples):
     #scale factor =  random.choice(np.linspace(342.8, 439.8 , 100))
     #synthetic.vert = (synthetic.vert)* (scale factor)
 
+    if not file_path.endswith("/"):
+        file_path += "/"
+
     synthetic = copy.deepcopy(mean)
     for i, vert_pos in enumerate(verts):
         synthetic.vert = vert_pos
-        synthetic.save(filename.format(i))
+        synthetic.save(file_path + "limb_{:05d}.stl".format(i))
 
 
 def scale_range(x, min, max):
@@ -119,4 +123,8 @@ def scale_range(x, min, max):
 
 
 if __name__ == "__main__":
-    GenerateRandomLimb("./stls/limb_{:05d}.stl", 50)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--num_limbs', type=int, default=1, help='Number of limbs to generate')
+    parser.add_argument("--path", type=str, default="./stls/")
+    args = parser.parse_args()
+    GenerateRandomLimb(args.path, args.num_limbs)

@@ -49,4 +49,4 @@ COPY entrypoint.sh /opt/app/entrypoint.sh
 RUN chmod +x /opt/app/entrypoint.sh
 
 ENTRYPOINT ["/opt/app/entrypoint.sh"]
-CMD ["python", "your_script.py"]
+CMD ["python", "GenerateRandomLimbs.py"]

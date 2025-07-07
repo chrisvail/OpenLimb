@@ -12,14 +12,13 @@ def plane_edge_intersection(a, b, n, p):
 
 
 
-def measure_plane(verts, edge2vert, face2edge, plane_point, plane_normal):
+def measure_planar_circumference(verts, edge2vert, face2edge, plane_point, plane_normal):
     edge_verts = verts[edge2vert]
     intersections, t = plane_edge_intersection(
         edge_verts[:, 0], edge_verts[:, 1], plane_normal, plane_point
     )
 
-    t_mask = torch.logical_and(0 <= t, t < 1)
-    print(f"{torch.sum(torch.isnan(intersections))=}    {torch.sum(t_mask)=}    {t_mask.shape=}")
+    t_mask = (0 < t) * (t < 1)
 
     face_intersections = intersections[face2edge]
     face_distances = torch.linalg.norm(
@@ -38,16 +37,33 @@ def measure_plane(verts, edge2vert, face2edge, plane_point, plane_normal):
     t_mask_faces = t_mask[face2edge]
     t_mask_faces = torch.concat(
         [
-            (t_mask_faces[:, 0] + t_mask_faces[:, 1] == 2)[:, None],
-            (t_mask_faces[:, 2] + t_mask_faces[:, 1] == 2)[:, None],
-            (t_mask_faces[:, 0] + t_mask_faces[:, 2] == 2)[:, None],
+            (t_mask_faces[:, 0] * t_mask_faces[:, 1])[:, None],
+            (t_mask_faces[:, 2] * t_mask_faces[:, 1])[:, None],
+            (t_mask_faces[:, 0] * t_mask_faces[:, 2])[:, None],
         ],
         dim=1,
     )
 
-    print(f"{t_mask_faces.shape=}    {torch.sum(t_mask_faces)}")
-
-    return torch.sum(face_distances * t_mask_faces)
+    return torch.nansum(face_distances * t_mask_faces)
 
 
+
+def measure_width(verts, edge2vert, plane_point, plane_normal, plane_direction: torch.Tensor):
+    edge_verts = verts[edge2vert]
+    intersections, t = plane_edge_intersection(
+        edge_verts[:, 0], edge_verts[:, 1], plane_normal, plane_point
+    )
+
+    t_mask = (0 < t) * (t < 1)
+
+    valid_intersections = intersections[t_mask.squeeze()]
+
+    values = torch.einsum("ij, ij -> i", valid_intersections, plane_direction)
+
+    return torch.max(values) - torch.min(values)
+
+
+
+def measure_length(v1, v2, direction):
+    return torch.dot(v1 - v2, direction)
 
