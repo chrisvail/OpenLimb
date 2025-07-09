@@ -67,3 +67,9 @@ def measure_width(verts, edge2vert, plane_point, plane_normal, plane_direction: 
 def measure_length(verts, v1, v2, direction):
     return torch.dot(verts[v1] - verts[v2], direction)
 
+def remove_bones(verts, path="/"):
+    mapping = torch.load(path + "vert_mapping.pt")
+    face2vert = torch.load(path + "face2vert.pt")
+
+    return verts[mapping], face2vert
+

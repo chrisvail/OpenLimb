@@ -55,7 +55,7 @@ import pickle
 import argparse
 
 
-def GenerateRandomLimb(file_path, n_samples, start):
+def GenerateRandomLimb(file_path, n_samples, start, npy):
     mean = AmpObject(
         '/opt/app/OpenLimbTT/version-2023-06/Mean_Limb_Shape.stl', unify=False)
 
@@ -104,6 +104,7 @@ def GenerateRandomLimb(file_path, n_samples, start):
         open('/opt/app/OpenLimbTT/version-2023-06/LR.pkl', 'rb'))
     newcomponent = pickled_model.predict(component)
 
+
     X = np.load('/opt/app/OpenLimbTT/version-2023-06/Components.npy')
 
     verts = copy.deepcopy(mean.vert)[None] + np.sum((newcomponent[..., None]
@@ -115,10 +116,14 @@ def GenerateRandomLimb(file_path, n_samples, start):
     if not file_path.endswith("/"):
         file_path += "/"
 
+    np.save(newcomponent, file_path + f"components_{start:05d}.npy")
     synthetic = copy.deepcopy(mean)
     for i, vert_pos in enumerate(verts):
         synthetic.vert = vert_pos
-        synthetic.save(file_path + "limb_{:05d}.stl".format(i + start))
+        if npy:
+            np.save(vert_pos, file_path + "limb_{:05d}.stl".format(i + start))
+        else:
+            synthetic.save(file_path + "limb_{:05d}.stl".format(i + start))
 
 
 def scale_range(x, min, max):
@@ -133,5 +138,6 @@ if __name__ == "__main__":
                         help="Path to output folder")
     parser.add_argument("--start", type=int, default=0,
                         help="Number to start labelling from")
+    parser.add_argument("--npy", type=bool, default=0, help="Generate .stl files if true otherwise just npy files")
     args = parser.parse_args()
-    GenerateRandomLimb(args.path, args.num_limbs, args.start)
+    GenerateRandomLimb(args.path, args.num_limbs, args.start, args.npy)
