@@ -64,6 +64,6 @@ def measure_width(verts, edge2vert, plane_point, plane_normal, plane_direction: 
 
 
 
-def measure_length(v1, v2, direction):
-    return torch.dot(v1 - v2, direction)
+def measure_length(verts, v1, v2, direction):
+    return torch.dot(verts[v1] - verts[v2], direction)
 

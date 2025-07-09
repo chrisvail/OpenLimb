@@ -55,8 +55,9 @@ import pickle
 import argparse
 
 
-def GenerateRandomLimb(file_path, n_samples):
-    mean = AmpObject('/opt/app/OpenLimbTT/version-2023-06/Mean_Limb_Shape.stl', unify=False)
+def GenerateRandomLimb(file_path, n_samples, start):
+    mean = AmpObject(
+        '/opt/app/OpenLimbTT/version-2023-06/Mean_Limb_Shape.stl', unify=False)
 
     component = np.zeros([10, n_samples])
 
@@ -70,7 +71,7 @@ def GenerateRandomLimb(file_path, n_samples):
     # component[7] = random.choice(np.linspace(-1.197319576810893 , 1.221847275562656, 100))
     # component[8] = random.choice(np.linspace(-0.798154129842514 , 0.802807003549, 100))
     # component[9] = random.choice(np.linspace(-0.7353096205329 , 0.95283973472981, 100))
-    
+
     minima = np.array([
         -14.80692194113721,
         -5.37869110537926,
@@ -99,15 +100,17 @@ def GenerateRandomLimb(file_path, n_samples):
 
     component = scale_range(np.random.rand(n_samples, 10), minima, maxima)
 
-    pickled_model = pickle.load(open('/opt/app/OpenLimbTT/version-2023-06/LR.pkl', 'rb'))
+    pickled_model = pickle.load(
+        open('/opt/app/OpenLimbTT/version-2023-06/LR.pkl', 'rb'))
     newcomponent = pickled_model.predict(component)
 
     X = np.load('/opt/app/OpenLimbTT/version-2023-06/Components.npy')
 
-    verts = copy.deepcopy(mean.vert)[None] + np.sum((newcomponent[..., None]*X[None]).reshape(n_samples, 10, mean.vert.shape[0], 3), axis=1)
+    verts = copy.deepcopy(mean.vert)[None] + np.sum((newcomponent[..., None]
+                                                     * X[None]).reshape(n_samples, 10, mean.vert.shape[0], 3), axis=1)
 
-    #scale factor =  random.choice(np.linspace(342.8, 439.8 , 100))
-    #synthetic.vert = (synthetic.vert)* (scale factor)
+    # scale factor =  random.choice(np.linspace(342.8, 439.8 , 100))
+    # synthetic.vert = (synthetic.vert)* (scale factor)
 
     if not file_path.endswith("/"):
         file_path += "/"
@@ -115,7 +118,7 @@ def GenerateRandomLimb(file_path, n_samples):
     synthetic = copy.deepcopy(mean)
     for i, vert_pos in enumerate(verts):
         synthetic.vert = vert_pos
-        synthetic.save(file_path + "limb_{:05d}.stl".format(i))
+        synthetic.save(file_path + "limb_{:05d}.stl".format(i + start))
 
 
 def scale_range(x, min, max):
@@ -124,7 +127,11 @@ def scale_range(x, min, max):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_limbs', type=int, default=1, help='Number of limbs to generate')
-    parser.add_argument("--path", type=str, default="./stls/")
+    parser.add_argument('--num_limbs', type=int, default=1,
+                        help='Number of limbs to generate')
+    parser.add_argument("--path", type=str, default="./stls/",
+                        help="Path to output folder")
+    parser.add_argument("--start", type=int, default=0,
+                        help="Number to start labelling from")
     args = parser.parse_args()
-    GenerateRandomLimb(args.path, args.num_limbs)
+    GenerateRandomLimb(args.path, args.num_limbs, args.start)
