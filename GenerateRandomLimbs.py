@@ -110,6 +110,7 @@ def GenerateRandomLimb(file_path, n_samples, start, save_mesh):
     verts = copy.deepcopy(mean.vert)[None] + np.sum((newcomponent[..., None]
                                                      * X[None]).reshape(n_samples, 10, mean.vert.shape[0], 3), axis=1)
 
+
     # scale factor =  random.choice(np.linspace(342.8, 439.8 , 100))
     # synthetic.vert = (synthetic.vert)* (scale factor)
 
@@ -118,6 +119,9 @@ def GenerateRandomLimb(file_path, n_samples, start, save_mesh):
 
     np.save(file_path + f"components_{start:05d}.npy", newcomponent)
     synthetic = copy.deepcopy(mean)
+    # np.save("mean_vert.npy", mean.vert)
+    # np.save("raw_components.npy", X)
+
     if save_mesh:
         for i, vert_pos in enumerate(verts):
             synthetic.vert = vert_pos
@@ -137,6 +141,9 @@ if __name__ == "__main__":
     parser.add_argument("--start", type=int, default=0,
                         help="Number to start labelling from")
     parser.add_argument("--save_mesh", type=int, default=1, help="Generate .stl files if true")
+    parser.add_argument("--seed", type=int, default=42, help="Seed for random number generation")
     args = parser.parse_args()
-    print(args.save_mesh)
+
+    np.random.seed(args.seed)
+
     GenerateRandomLimb(args.path, args.num_limbs, args.start, args.save_mesh)

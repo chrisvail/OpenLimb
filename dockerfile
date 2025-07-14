@@ -34,7 +34,7 @@ RUN git clone https://github.com/abel-research/ampscan.git \
 
 # Install ampscan and its dependencies
 WORKDIR /opt/app/ampscan
-RUN pip install --no-cache-dir numpy scipy matplotlib pyqt5==5.15.9 vtk==9.2.6 scikit-learn \
+RUN pip install --no-cache-dir numpy==1.24 scipy matplotlib pyqt5==5.15.9 vtk==9.2.6 scikit-learn==1.2.1 \
  && pip install --no-cache-dir .
 
 
