@@ -55,7 +55,7 @@ import pickle
 import argparse
 
 
-def GenerateRandomLimb(file_path, n_samples, start, npy):
+def GenerateRandomLimb(file_path, n_samples, start, save_mesh):
     mean = AmpObject(
         '/opt/app/OpenLimbTT/version-2023-06/Mean_Limb_Shape.stl', unify=False)
 
@@ -116,13 +116,11 @@ def GenerateRandomLimb(file_path, n_samples, start, npy):
     if not file_path.endswith("/"):
         file_path += "/"
 
-    np.save(newcomponent, file_path + f"components_{start:05d}.npy")
+    np.save(file_path + f"components_{start:05d}.npy", newcomponent)
     synthetic = copy.deepcopy(mean)
-    for i, vert_pos in enumerate(verts):
-        synthetic.vert = vert_pos
-        if npy:
-            np.save(vert_pos, file_path + "limb_{:05d}.stl".format(i + start))
-        else:
+    if save_mesh:
+        for i, vert_pos in enumerate(verts):
+            synthetic.vert = vert_pos
             synthetic.save(file_path + "limb_{:05d}.stl".format(i + start))
 
 
@@ -138,6 +136,7 @@ if __name__ == "__main__":
                         help="Path to output folder")
     parser.add_argument("--start", type=int, default=0,
                         help="Number to start labelling from")
-    parser.add_argument("--npy", type=bool, default=0, help="Generate .stl files if true otherwise just npy files")
+    parser.add_argument("--save_mesh", type=int, default=1, help="Generate .stl files if true")
     args = parser.parse_args()
-    GenerateRandomLimb(args.path, args.num_limbs, args.start, args.npy)
+    print(args.save_mesh)
+    GenerateRandomLimb(args.path, args.num_limbs, args.start, args.save_mesh)

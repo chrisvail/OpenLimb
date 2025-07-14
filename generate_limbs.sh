@@ -11,7 +11,7 @@ SCRIPT_PATH="$CONTAINER_DIR/GenerateRandomLimbs.py"
 EXTRA_ARGS="$@"
 
 # Run it inside the Docker container
-docker run --rm -it \
+docker run --rm \
   -v "$HOST_DIR":"$CONTAINER_DIR" \
   -w "$CONTAINER_DIR" \
   openlimbtt-env \
