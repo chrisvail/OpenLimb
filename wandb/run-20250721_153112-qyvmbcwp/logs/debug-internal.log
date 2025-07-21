@@ -1,0 +1,6 @@
+{"time":"2025-07-21T15:31:12.690045076+01:00","level":"INFO","msg":"stream: starting","core version":"0.21.0"}
+{"time":"2025-07-21T15:31:12.918661018+01:00","level":"INFO","msg":"stream: created new stream","id":"qyvmbcwp"}
+{"time":"2025-07-21T15:31:12.918683282+01:00","level":"INFO","msg":"stream: started","id":"qyvmbcwp"}
+{"time":"2025-07-21T15:31:12.918777976+01:00","level":"INFO","msg":"handler: started","stream_id":"qyvmbcwp"}
+{"time":"2025-07-21T15:31:12.918791641+01:00","level":"INFO","msg":"sender: started","stream_id":"qyvmbcwp"}
+{"time":"2025-07-21T15:31:12.918793397+01:00","level":"INFO","msg":"writer: Do: started","stream_id":"qyvmbcwp"}

@@ -13,6 +13,14 @@ def plane_edge_intersection(a, b, n, p):
 
 
 def measure_planar_circumference(verts, edge2vert, face2edge, plane_point, plane_normal):
+    print(f"{verts.shape=}")
+    if isinstance(plane_point, int) or (isinstance(plane_point, torch.Tensor) and not len(plane_point.shape)):
+        plane_point = verts[plane_point]
+
+    if isinstance(plane_normal, (tuple, list)):
+        plane_normal = verts[plane_normal[0]] - verts[plane_normal[1]]
+        plane_normal /= torch.linalg.norm(plane_normal)
+
     edge_verts = verts[edge2vert]
     intersections, t = plane_edge_intersection(
         edge_verts[:, 0], edge_verts[:, 1], plane_normal, plane_point
@@ -48,7 +56,18 @@ def measure_planar_circumference(verts, edge2vert, face2edge, plane_point, plane
 
 
 
-def measure_width(verts, edge2vert, plane_point, plane_normal, plane_direction: torch.Tensor):
+def measure_width(verts, edge2vert, plane_point, plane_normal, plane_direction):
+    if isinstance(plane_point, int) or (isinstance(plane_point, torch.Tensor) and not len(plane_point.shape)):
+        plane_point = verts[plane_point]
+
+    if isinstance(plane_normal, (tuple, list)):
+        plane_normal = verts[plane_normal[0]] - verts[plane_normal[1]]
+        plane_normal /= torch.linalg.norm(plane_normal)
+
+    if isinstance(plane_direction, (tuple, list)):
+        plane_direction = verts[plane_direction[0]] - verts[plane_direction[1]]
+        plane_direction /= torch.linalg.norm(plane_direction)
+
     edge_verts = verts[edge2vert]
     intersections, t = plane_edge_intersection(
         edge_verts[:, 0], edge_verts[:, 1], plane_normal, plane_point
@@ -65,7 +84,11 @@ def measure_width(verts, edge2vert, plane_point, plane_normal, plane_direction: 
 
 
 def measure_length(verts, v1, v2, direction):
-    return torch.dot(verts[v1] - verts[v2], direction)
+    if isinstance(direction, (tuple, list)):
+        direction = verts[direction[0]] - verts[direction[1]]
+        direction /= torch.linalg.norm(direction)
+
+    return torch.abs(torch.dot(verts[v1] - verts[v2], direction.squeeze()))
 
 def remove_bones(verts, path="/"):
     mapping = torch.load(path + "vert_mapping.pt")

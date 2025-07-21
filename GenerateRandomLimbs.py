@@ -117,7 +117,7 @@ def GenerateRandomLimb(file_path, n_samples, start, save_mesh):
     if not file_path.endswith("/"):
         file_path += "/"
 
-    np.save(file_path + f"components_{start:05d}.npy", newcomponent)
+    np.save(file_path + f"components_{start:08d}.npy", newcomponent)
     synthetic = copy.deepcopy(mean)
     # np.save("mean_vert.npy", mean.vert)
     # np.save("raw_components.npy", X)
@@ -125,7 +125,7 @@ def GenerateRandomLimb(file_path, n_samples, start, save_mesh):
     if save_mesh:
         for i, vert_pos in enumerate(verts):
             synthetic.vert = vert_pos
-            synthetic.save(file_path + "limb_{:05d}.stl".format(i + start))
+            synthetic.save(file_path + "limb_{:08d}.stl".format(i + start))
 
 
 def scale_range(x, min, max):

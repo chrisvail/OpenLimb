@@ -1,0 +1,40 @@
+{
+  "os":  "Linux-6.8.0-60-generic-x86_64-with-glibc2.35",
+  "python":  "CPython 3.12.9",
+  "startedAt":  "2025-07-21T14:31:12.483631Z",
+  "program":  "/home/chris/Documents/OpenLimb/SSM_Driver.ipynb",
+  "codePath":  "SSM_Driver.ipynb",
+  "codePathLocal":  "SSM_Driver.ipynb",
+  "git":  {
+    "remote":  "https://github.com/chrisvail/OpenLimb.git",
+    "commit":  "49eae28acc171ecb252a0a41e766d9c08aa42e2e"
+  },
+  "email":  "cnv18@ic.ac.uk",
+  "root":  "/home/chris/Documents/OpenLimb",
+  "host":  "chris-System-Product-Name",
+  "executable":  "/home/chris/Documents/OpenLimb/.venv/bin/python",
+  "cpu_count":  20,
+  "cpu_count_logical":  28,
+  "gpu":  "NVIDIA GeForce RTX 4070 Ti SUPER",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "966682378240",
+      "used":  "225960812544"
+    }
+  },
+  "memory":  {
+    "total":  "67151646720"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 4070 Ti SUPER",
+      "memoryTotal":  "17171480576",
+      "cudaCores":  8448,
+      "architecture":  "Ada",
+      "uuid":  "GPU-6370add4-79e6-2146-93f2-bb191b06230e"
+    }
+  ],
+  "cudaVersion":  "12.4",
+  "writerId":  "3wq7mepddhqwebg0iubdhlezulhdfqml"
+}

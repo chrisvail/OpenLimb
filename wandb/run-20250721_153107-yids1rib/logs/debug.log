@@ -1,0 +1,5 @@
+2025-07-21 15:31:07,774 INFO    MainThread:990747 [wandb_init.py:setup_run_log_directory():703] Logging user logs to /home/chris/Documents/OpenLimb/wandb/run-20250721_153107-yids1rib/logs/debug.log
+2025-07-21 15:31:07,774 INFO    MainThread:990747 [wandb_init.py:setup_run_log_directory():704] Logging internal logs to /home/chris/Documents/OpenLimb/wandb/run-20250721_153107-yids1rib/logs/debug-internal.log
+2025-07-21 15:31:07,774 INFO    MainThread:990747 [wandb_init.py:init():830] calling init triggers
+2025-07-21 15:31:07,774 INFO    MainThread:990747 [wandb_init.py:init():835] wandb.init called with sweep_config: {}
+config: {'lr': 0.001, 'eta_min': 1e-05, 'batch_size': 256, 'log': True, 'seed': 42, '_wandb': {}}
