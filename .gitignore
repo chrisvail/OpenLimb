@@ -1,7 +1,5 @@
 /stls
 /wandb
+/meshes
 __pycache__
-icosphere.stl
-test_cuts.obj
-torch_test_cuts.obj
 *.pt
