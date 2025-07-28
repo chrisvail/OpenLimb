@@ -1,4 +1,5 @@
 /stls
+/wandb
 __pycache__
 icosphere.stl
 test_cuts.obj
