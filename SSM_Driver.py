@@ -48,12 +48,15 @@ class Measurements(nn.Module):
 
 
 class LegMeasurementDataset(torch.utils.data.Dataset):
-    def __init__(self, measure, batch_size=64, path="./stls", dtype=torch.float64, device="cpu"):
+    def __init__(self, measure, batch_size=64, scale=True, normalise=True, relativise=False, path="./stls", dtype=torch.float64, device="cpu"):
         super().__init__()
         self.dtype = dtype
         self.device = device
         self.measure = measure
         self.batch_size = batch_size
+        self.scale = int(scale)
+        self.normalise = normalise
+        self.relativise = relativise
         self.path = path
         self.loaded_components = {}
         self.raw_components = torch.load("./data_components/vert_components.pt").to(dtype).to(device)
@@ -93,25 +96,27 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
 
         verts = self.get_verts(components)
 
-        measurements = self.get_measures(verts=verts, normalise=False).squeeze()
+        measurements = self.get_measures(verts=verts, normalise=self.normalise, relativise=self.relativise).squeeze()
 
         return measurements, components
         # return verts, self.face2vert, measurements, components
     
 
     def get_verts(self, components):
-        if len(components.shape) == 1:
-            components, scale = components[:-1], components[-1:]
-        else:
-            components, scale = components[:,:-1], components[:,-1:]
+        if self.scale:
+            if len(components.shape) == 1:
+                components, scale = components[:-1], components[-1:]
+            else:
+                components, scale = components[:,:-1], components[:,-1:]
         
         total = torch.sum(self.raw_components[None] * components[..., None], dim=1)
         verts = self.mean_verts[None] + total.reshape((total.shape[0], self.mean_verts.shape[0], self.mean_verts.shape[1]))
-        verts = verts[:, self.vert_mapping]*scale[..., None]
+        if self.scale:
+            verts = verts[:, self.vert_mapping]*scale[..., None]
 
         return verts.squeeze()
     
-    def get_measures(self, components=None, verts=None, verbose=False, normalise=False):
+    def get_measures(self, components=None, verts=None, verbose=False, normalise=False, relativise=False):
         if components is not None:
             verts = self.get_verts(components)
 
@@ -119,6 +124,9 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
 
         if normalise:
             measurements = self.normalise_measures(measurements)
+
+        if relativise:
+            measurements /= measurements[:, :1].clone()
 
         return measurements
     
@@ -137,7 +145,7 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
             "--save_mesh",
             "0",
             "--scale",
-            "1",
+            f"{self.scale}",
             "--seed",
             f"{torch.randint(0, 100000, (1,))[0]}"
         ]
@@ -152,7 +160,10 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
             except FileNotFoundError:
                 continue
             else:
-                self.loaded_components[start] = torch.tensor(components, dtype=self.dtype, device=self.device)
+                if self.scale:
+                    self.loaded_components[start] = torch.tensor(components, dtype=self.dtype, device=self.device)
+                else:
+                    self.loaded_components[start] = torch.tensor(components, dtype=self.dtype, device=self.device)[:, :-1]
                 break
 
     def delete_data(self, start):
