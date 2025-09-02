@@ -3,7 +3,7 @@ from abc import ABC
 
 
 def export_notebook(file_path):
-    with open(file_path, "r") as f:
+    with open(file_path, "rb") as f:
         data = json.load(f)
 
     out_file_path = file_path[:-5] + "py"
