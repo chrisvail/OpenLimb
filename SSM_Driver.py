@@ -108,12 +108,16 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
                 components, scale = components[:-1], components[-1:]
             else:
                 components, scale = components[:,:-1], components[:,-1:]
+        else:
+            if len(components.shape) == 1:
+                scale = torch.ones_like(components[-1:])
+            else:
+                scale = torch.ones_like(components[:, -1:])
         
         total = torch.sum(self.raw_components[None] * components[..., None], dim=1)
         verts = self.mean_verts[None] + total.reshape((total.shape[0], self.mean_verts.shape[0], self.mean_verts.shape[1]))
-        if self.scale:
-            verts = verts[:, self.vert_mapping]*scale[..., None]
-
+        verts = verts[:, self.vert_mapping]*scale[..., None]
+        
         return verts.squeeze()
     
     def get_measures(self, components=None, verts=None, verbose=False, normalise=False, relativise=False):
