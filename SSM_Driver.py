@@ -63,8 +63,8 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
         self.mean_verts = torch.load("./data_components/mean_verts.pt").to(dtype).to(device)
         self.face2vert = torch.load("./data_components/face2vert.pt").to(device)
         self.vert_mapping = torch.load("./data_components/vert_mapping.pt").to(device)
-        self.component_transforms = torch.load("./data_components/scaled_component_transforms.pt").to(dtype).to(device)
-        self.measurement_transforms = torch.load("./data_components/scaled_measurement_transforms.pt").to(dtype).to(device)
+        self.component_transforms = torch.load(f"./data_components/{'' if self.scale else 'un'}scaled_component_transforms.pt").to(dtype).to(device)
+        self.measurement_transforms = torch.load(f"./data_components/{'' if self.scale else 'un'}scaled_measurement_transforms.pt").to(dtype).to(device)
 
         # Remove all .npy files from the specified path
         for file in os.listdir(self.path):
@@ -261,4 +261,98 @@ measure = Measurements(
 )
 
 
+
+class MeasurementLoss(nn.Module):
+    def __init__(self, measures: LegMeasurementDataset):
+        super().__init__()
+        self.measures = measures
+
+    def forward(self, components, true_components):
+        device = components.device
+        pred_measures = self.measures.get_measures(components.to(self.measures.device), verbose=False)
+        true_measures = self.measures.get_measures(true_components.to(self.measures.device), verbose=False)
+        # print(f"{torch.isnan(components).sum()=}    {torch.isnan(measurements).sum()=}    {pred_measures.shape=}")
+        return torch.mean((pred_measures - true_measures)**2 / ((true_measures**2) + 1E-12)).to(device)
+    
+
+
+class RelativeMeasurementLoss(nn.Module):
+    def __init__(self, measures: LegMeasurementDataset):
+        super().__init__()
+        self.measures = measures
+
+    def forward(self, components, true_components):
+        device = components.device
+        pred_measures = self.measures.get_measures(components.to(self.measures.device), relativise=True, verbose=False)
+        true_measures = self.measures.get_measures(true_components.to(self.measures.device), relativise=True, verbose=False)
+        # print(f"{torch.isnan(components).sum()=}    {torch.isnan(measurements).sum()=}    {pred_measures.shape=}")
+        return torch.mean((pred_measures - true_measures)**2).to(device)
+
+class PointwiseLoss(nn.Module):
+    def __init__(self, measures):
+        super().__init__()
+        self.measures = measures
+
+    def forward(self, pred_components, true_components):
+        device = pred_components.device
+        pred_verts = self.measures.get_verts(pred_components.to(self.measures.device))
+        true_verts = self.measures.get_verts(true_components.to(self.measures.device))
+        return torch.mean((pred_verts - true_verts)**2).to(device)
+
+def create_examples(components, preds, dataset, n=5):
+    with torch.no_grad():
+        # Get predicted and true vertices
+        pred_verts = dataset.get_verts(preds)
+        true_verts = dataset.get_verts(components)
+
+        for i, (pv, tv) in enumerate(zip(pred_verts, true_verts[:n])):
+            # Save predicted mesh
+            with open(f"meshes/predicted_{i:04d}.obj", "w") as f:
+                for v in pv:
+                    f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+                for face in dataset.face2vert:
+                    f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
+
+            # Save true mesh
+            with open(f"meshes/true_{i:04d}.obj", "w") as f:
+                for v in tv:
+                    f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+                for face in dataset.face2vert:
+                    f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
+
+
+
+def create_bad_examples(components, preds, dataset, n=5):
+    with torch.no_grad():
+        # Get predicted and true vertices
+        pred_verts = dataset.get_verts(preds)
+        true_verts = dataset.get_verts(components)
+
+        pred_measures = dataset.get_measures(verts=pred_verts)
+        true_measures = dataset.get_measures(verts=true_verts)
+
+        measure_loss = torch.max((true_measures - pred_measures)**2, dim=-1)[0]
+
+        # Compute pointwise distances for each sample
+        # pointwise_dist = torch.mean((pred_verts - true_verts) ** 2, dim=(1, 2))
+        # Get indices of top n samples with largest distance
+        idxs = torch.topk(measure_loss, n).indices
+        pred_verts = pred_verts[idxs]
+        true_verts = true_verts[idxs]
+        
+        
+        for i, (pv, tv) in enumerate(zip(pred_verts, true_verts)):
+            # Save predicted mesh
+            with open(f"meshes/predicted_bad_{i:04d}.obj", "w") as f:
+                for v in pv:
+                    f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+                for face in dataset.face2vert:
+                    f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
+
+            # Save true mesh
+            with open(f"meshes/true_bad_{i:04d}.obj", "w") as f:
+                for v in tv:
+                    f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+                for face in dataset.face2vert:
+                    f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
 
