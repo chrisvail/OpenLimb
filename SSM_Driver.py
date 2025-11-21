@@ -75,7 +75,7 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
         self.generate_data(self.batch_size)
 
     def __len__(self):
-        return 100_000
+        return 10_000_000
 
     def __getitem__(self, index):
         if index % self.batch_size == 0:
@@ -261,4 +261,25 @@ measure = Measurements(
 )
 
 
+
+def create_examples(components, preds, dataset, n=5):
+    with torch.no_grad():
+        # Get predicted and true vertices
+        pred_verts = dataset.get_verts(preds)
+        true_verts = dataset.get_verts(components)
+
+        for i, (pv, tv) in enumerate(zip(pred_verts, true_verts[:n])):
+            # Save predicted mesh
+            with open(f"meshes/predicted_{i:04d}.obj", "w") as f:
+                for v in pv:
+                    f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+                for face in dataset.face2vert:
+                    f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
+
+            # Save true mesh
+            with open(f"meshes/true_{i:04d}.obj", "w") as f:
+                for v in tv:
+                    f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+                for face in dataset.face2vert:
+                    f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
 
