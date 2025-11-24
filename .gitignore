@@ -3,3 +3,5 @@
 /meshes
 __pycache__
 *.pt
+/imgs
+/nn_meshes
