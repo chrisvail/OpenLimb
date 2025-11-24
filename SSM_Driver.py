@@ -75,7 +75,7 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
         self.generate_data(self.batch_size)
 
     def __len__(self):
-        return 100_000
+        return 10_000_000
 
     def __getitem__(self, index):
         if index % self.batch_size == 0:
