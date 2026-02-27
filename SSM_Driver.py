@@ -71,8 +71,14 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
             if file.endswith(".npy"):
                 os.remove(os.path.join(self.path, file))
 
-        self.generate_data(0)
-        self.generate_data(self.batch_size)
+        try:
+            self.generate_data(0)
+            self.generate_data(self.batch_size)
+        except subprocess.CalledProcessError as e:
+            print(f"{e.output=}")
+            print(f"{e.stderr=}")
+            print(f"{e.stdout=}")
+            raise
 
     def __len__(self):
         return 10_000_000
