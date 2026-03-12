@@ -81,7 +81,7 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
             raise
 
     def __len__(self):
-        return 10_000_000
+        return 100_000
 
     def __getitem__(self, index):
         if index % self.batch_size == 0:
@@ -199,7 +199,6 @@ edge2vert = torch.from_numpy(edge2vert)
 face2edge = torch.from_numpy(face2edge)
 edge2face = torch.from_numpy(edge2face)
 
-vert_idxs = torch.load("./data_components/selected_verts.pt")
 
 # Order
 # Mid patella tendon
@@ -211,54 +210,58 @@ vert_idxs = torch.load("./data_components/selected_verts.pt")
 # Circ 3
 # Circ 4
 
-measurement_details = (
-    {
-        # Circ one
-        "type": "circumference",
-        "plane_point": vert_idxs[4],
-        "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
-        "name":"Circumference 1",
-    },
-    {
-        "type": "circumference",
-        "plane_point": vert_idxs[5],
-        "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
-        "name":"Circumference 2",
-    },
-    {
-        "type": "circumference",
-        "plane_point": vert_idxs[6],
-        "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
-        "name":"Circumference 3",
-    },
-    {
-        "type": "circumference",
-        "plane_point": vert_idxs[7],
-        "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
-        "name":"Circumference 4",
-    },
-    {
-        "type": "length", 
-        "v1": vert_idxs[0], 
-        "v2": vert_idxs[1], 
-        "direction": torch.tensor([[0, 0, 1]], dtype=dtype),
-        "name":"Length 1",
-    },
-    {
-        "type": "width",
-        "plane_point": vert_idxs[2],
-        "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
-        "plane_direction": torch.tensor([[1, 0, 0]], dtype=dtype),
-        "name":"Width 1",
-    },
-    {
-        "type": "width",
-        "plane_point": vert_idxs[3],
-        "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
-        "plane_direction": torch.tensor([[1, 0, 0]], dtype=dtype),
-        "name":"Width 2",
-    },
-)
+def get_measurement_details(dtype):
+    vert_idxs = torch.load("./data_components/selected_verts.pt")
+    return (
+        {
+            # Circ one
+            "type": "circumference",
+            "plane_point": vert_idxs[4],
+            "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
+            "name":"Circumference 1",
+        },
+        {
+            "type": "circumference",
+            "plane_point": vert_idxs[5],
+            "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
+            "name":"Circumference 2",
+        },
+        {
+            "type": "circumference",
+            "plane_point": vert_idxs[6],
+            "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
+            "name":"Circumference 3",
+        },
+        {
+            "type": "circumference",
+            "plane_point": vert_idxs[7],
+            "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
+            "name":"Circumference 4",
+        },
+        {
+            "type": "length", 
+            "v1": vert_idxs[0], 
+            "v2": vert_idxs[1], 
+            "direction": torch.tensor([[0, 0, 1]], dtype=dtype),
+            "name":"Length 1",
+        },
+        {
+            "type": "width",
+            "plane_point": vert_idxs[2],
+            "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
+            "plane_direction": torch.tensor([[1, 0, 0]], dtype=dtype),
+            "name":"Width 1",
+        },
+        {
+            "type": "width",
+            "plane_point": vert_idxs[3],
+            "plane_normal": torch.tensor([[0, 0, 1]], dtype=dtype),
+            "plane_direction": torch.tensor([[1, 0, 0]], dtype=dtype),
+            "name":"Width 2",
+        },
+    )
+
+measurement_details = get_measurement_details(dtype)
 
 measure = Measurements(
     edge2vert,
@@ -277,7 +280,7 @@ class MeasurementLoss(nn.Module):
         device = components.device
         pred_measures = self.measures.get_measures(components.to(self.measures.device), verbose=False)
         true_measures = self.measures.get_measures(true_components.to(self.measures.device), verbose=False)
-        # print(f"{torch.isnan(components).sum()=}    {torch.isnan(measurements).sum()=}    {pred_measures.shape=}")
+        # print(f"{torch.isnan(components).sum()=}    {torch.isnan(pred_measures).sum()=}    {pred_measures.shape=}")
         return torch.mean((pred_measures - true_measures)**2 / ((true_measures**2) + 1E-12)).to(device)
     
 

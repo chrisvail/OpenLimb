@@ -5,3 +5,4 @@ __pycache__
 *.pt
 /imgs
 /nn_meshes
+/.vscode
