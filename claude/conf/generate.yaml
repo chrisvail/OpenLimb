@@ -1,0 +1,17 @@
+ckpt: ???                 # path to a trained LimbCVAE .ckpt
+# Measurements in physical units, in the order of SSM_Driver.get_measurement_details:
+# [Circ 1, Circ 2, Circ 3, Circ 4, Length 1, Width 1, Width 2]  (mm when the model was trained with scale=true)
+measurements: null
+test_index: null          # alternatively: use the (exact) measurements of this fixed test-set limb
+n_samples: 16
+temperature: 1.0          # scales z; <1 = closer to the "average" limb, >1 = wider family
+reject_implausible: true  # resample until every limb lies inside the generator's plausible box
+save_meshes: false        # write one .obj per sample
+seed: 0
+out_dir: ${claude_dir:}/outputs/generated/${now:%Y-%m-%d_%H-%M-%S}
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${out_dir}

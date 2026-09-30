@@ -1,0 +1,31 @@
+_target_: openlimb_cvae.lit_cvae.LimbCVAE
+
+# --- architecture -----------------------------------------------------------------
+z_dim: 4            # latent size injected into the decoder. 0 = deterministic regressor.
+                    # (7 measurements vs 11 SSM coordinates => ~4 free degrees of freedom)
+width: 256
+depth: 4            # residual blocks per network
+dropout: 0.0
+
+# --- optimisation -----------------------------------------------------------------
+lr: 1.0e-3
+weight_decay: 1.0e-4
+warmup_epochs: 3
+
+# --- loss weights -----------------------------------------------------------------
+beta: 0.01          # KL weight (final value after warm-up)
+kl_warmup_epochs: 20
+free_bits: 0.0      # nats per latent dim not penalised (prevents posterior collapse)
+w_recon: 1.0        # posterior path: MSE on z-scored components
+w_vert: 0.0         # posterior path: mesh vertex error (relative to vertex variance)
+w_meas: 1.0         # posterior path: measurement consistency (via surrogate)
+w_prior_meas: 1.0   # prior path (z ~ N(0,I)): measurement consistency - what makes samples honour m
+w_plaus: 200.0      # prior path: penalty for leaving the generator's plausible box (1 -> 20 % outside, 50 -> 4 %, 200 -> 2 %)
+
+# --- augmentation / evaluation ------------------------------------------------------
+meas_noise: 0.0     # std (z-scored units) of noise added to measurements fed to the model
+eval_sigma: 0.1     # fixed decoder sigma used for the comparable val/elbo_nll metric
+n_diversity: 8
+exact_eval_n: 256   # limbs for the slow exact-measurement eval during validation (0 = off)
+exact_eval_every: 10
+test_exact_n: 1024

@@ -1,0 +1,100 @@
+checkpoint: claude/outputs/single/2026-09-29_15-31-39/checkpoints/best.ckpt
+z_dim=4  scale=True  w_plaus=50
+generating 1024 test limbs with the original docker generator ...
+sampler vs docker generator (max |component mean diff|/std, max |std ratio-1|): 0.05 / 0.03
+
+=== A. Measurement accuracy (ORIGINAL SSM_Driver measurements of decoded limbs vs requested) ===
+
+[prior z~N(0,I)]  8192 limbs
+measure          mean mm  |err| mean  |err| std  |err| max  bias mm  % mean  % std  % max
+---------------  -------  ----------  ---------  ---------  -------  ------  -----  -----
+Circumference 1    341.2       0.454      0.416       5.21   +0.076   0.136  0.131   1.64
+Circumference 2    330.1       0.429      0.385       5.05   +0.056   0.133  0.124   1.57
+Circumference 3    316.2       0.418      0.366       4.13   +0.020   0.134  0.120   1.52
+Circumference 4    300.5       0.490      0.456       5.46   -0.002   0.166  0.157   1.73
+Length 1           135.2       0.353      0.363       5.71   +0.045   0.283  0.348   7.19
+Width 1            126.1       0.201      0.174       2.33   +0.026   0.162  0.143   2.14
+Width 2            132.1       0.202      0.180       2.03   +0.010   0.155  0.139   1.53
+ALL                            0.364      0.367       5.71   +0.033   0.167  0.189   7.19
+
+[posterior z=mu(m,c)]  1024 limbs
+measure          mean mm  |err| mean  |err| std  |err| max  bias mm  % mean  % std  % max
+---------------  -------  ----------  ---------  ---------  -------  ------  -----  -----
+Circumference 1    341.2       0.391      0.325       2.63   +0.053   0.117  0.104   1.08
+Circumference 2    330.1       0.393      0.317       2.11   +0.028   0.121  0.101   0.94
+Circumference 3    316.2       0.394      0.314       2.08   +0.024   0.126  0.100   0.62
+Circumference 4    300.5       0.440      0.372       2.61   +0.039   0.149  0.131   1.02
+Length 1           135.2       0.322      0.251       2.20   +0.016   0.254  0.225   2.20
+Width 1            126.1       0.182      0.144       0.80   +0.014   0.146  0.117   0.69
+Width 2            132.1       0.187      0.161       1.08   +0.004   0.144  0.125   0.79
+ALL                            0.330      0.297       2.63   +0.025   0.151  0.142   2.20
+
+=== B. Plausibility of prior samples (inside the generator's skin-mode box) ===
+outside box: 4.3%   outside by >5% of box half-range: 0.3%   max exceedance 0.146   (8192 samples)
+
+=== C. Shape distance to the TRUE limb (1000 limbs, mm, vertex-sampled; original get_verts) ===
+vs true limb                  chamfer     hausdorff  pt-to-plane  pt-to-plane max  vertex rmse
+------------------------  -----------  ------------  -----------  ---------------  -----------
+posterior (z=mu)          0.97 ± 0.42   2.04 ± 1.11  0.40 ± 0.21      1.66 ± 0.88  1.12 ± 0.62
+prior, mean over samples  3.60 ± 1.62  13.42 ± 7.12  3.10 ± 1.71     12.70 ± 6.98  8.12 ± 4.19
+prior, best of 4          2.45 ± 0.84   8.52 ± 4.13  1.85 ± 0.91      7.88 ± 3.98  5.15 ± 2.63
+(mean ± std over limbs; 'max' column = worst vertex per limb. Prior samples are *different* limbs with the same measurements, so they are not expected to reproduce the true shape exactly.)
+context: chamfer between two unrelated limbs = 13.75 mm; true-limb vertex spread (RMS from mean) = 24.89 mm
+
+=== D. Same measurements, different z: 500 measurement sets x 64 samples (= 32000 limbs) ===
+  ... 25/500 sets
+  ... 50/500 sets
+  ... 75/500 sets
+  ... 100/500 sets
+  ... 125/500 sets
+  ... 150/500 sets
+  ... 175/500 sets
+  ... 200/500 sets
+  ... 225/500 sets
+  ... 250/500 sets
+  ... 275/500 sets
+  ... 300/500 sets
+  ... 325/500 sets
+  ... 350/500 sets
+  ... 375/500 sets
+  ... 400/500 sets
+  ... 425/500 sets
+  ... 450/500 sets
+  ... 475/500 sets
+  ... 500/500 sets
+
+D1. measurements stay put while z varies (exact, original code) - mean over sets of the per-set std over z:
+measure          std over z mm  std over z %  |err| mm  |err| %
+---------------  -------------  ------------  --------  -------
+Circumference 1          0.474         0.141     0.454    0.136
+Circumference 2          0.447         0.137     0.432    0.133
+Circumference 3          0.443         0.141     0.421    0.135
+Circumference 4          0.507         0.171     0.491    0.167
+Length 1                 0.380         0.303     0.361    0.290
+Width 1                  0.213         0.171     0.200    0.161
+Width 2                  0.220         0.169     0.202    0.156
+
+D2. shapes differ while z varies:
+  RMS vertex deviation from family mean (mm): 5.392 (95% range over sets 2.983-7.439)
+  mean pairwise vertex RMSE between two samples (mm): 7.555 (95% range over sets 4.218-10.390);  largest pair: 20.016 (95% range over sets 10.550-28.427)
+  chamfer between two samples of the same set (mm): 3.260 (95% range over sets 1.455-7.649);  hausdorff: 11.782 (95% range over sets 3.978-28.808)
+
+D3. dimensionality of the family (PCA of vertices across z):
+  variance fraction per principal direction: 0.652  0.252  0.067  0.021  0.006  0.002  0.001  0.000
+  participation ratio (effective # of dims): 2.02   dims for 95% var: 3
+
+D4. fraction of family variance inside the 4-D nullspace of the measurement Jacobian (1.0 = z moves the limb only along measurement-preserving directions): 0.949 (95% range over sets 0.848-0.987)
+
+D5. vs a reference family of real limbs sharing the same measurements (82 sets, 91 ref limbs each)
+  spread (RMS vertex deviation from family mean): generated 5.66 mm   reference 5.34 mm
+  coverage  (ref limb -> nearest generated sample): 1.91 mm   [ref->nearest other ref, density baseline: 1.68 mm]
+  precision (generated -> nearest ref limb):         1.95 mm
+  true limb -> nearest of 64 generated samples: 2.049 (95% range over sets 0.865-4.264) mm (vertex RMSE)
+
+=== E. Latent traversal: z = ±2 along one axis, others 0 (100 measurement sets) ===
+axis  var(mu)  KL nats  shape change mm (RMS vert)  max meas drift mm  worst drift mm
+----  -------  -------  --------------------------  -----------------  --------------
+z0      0.934    1.354                        6.10               0.85            2.41
+z1      0.883    1.323                        3.42               0.81            2.32
+z2      0.915    1.306                        6.01               0.86            2.68
+z3      0.870    1.203                        6.63               0.73            1.54

@@ -1,0 +1,9 @@
+max_epochs: 3
+limit_train_batches: 10
+limit_val_batches: 3
+limit_test_batches: 3
+accelerator: cpu
+devices: 1
+log_every_n_steps: 1
+enable_progress_bar: false
+enable_model_summary: false

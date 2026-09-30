@@ -1,0 +1,14 @@
+ckpt: ???                                   # plain-MLP checkpoint
+cvae_ckpt: claude/outputs/single/2026-09-29_15-42-26/checkpoints/best.ckpt   # final CVAE (used for timing only)
+cvae_eval: claude/outputs/eval/wplaus200    # its evaluate.py output (eval_data.npz) - same 1024 test limbs
+n_limbs: 1024
+n_shape_limbs: 1000
+seed: 777                                   # must equal evaluate.py's seed => identical test limbs
+fig_dir: claude/report/figs
+out_dir: ${claude_dir:}/outputs/eval/mlp
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${out_dir}

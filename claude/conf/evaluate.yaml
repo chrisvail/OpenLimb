@@ -1,0 +1,18 @@
+ckpt: ???
+n_limbs: 1024         # held-out limbs from the ORIGINAL docker generator (deleted after loading)
+k_prior: 8            # prior samples (z ~ N(0,I)) per limb for the accuracy tables -> 8192 samples
+n_shape_limbs: 1000   # limbs used for chamfer / hausdorff / point-to-plane
+k_shape: 4
+n_family_limbs: 500   # "same measurements, different shape": measurement sets ...
+k_family: 64          # ... x samples each  (32000 limbs)
+n_reference_sets: 100 # sets for which a reference family (projected real limbs) is built
+n_reference: 300
+n_traversal_limbs: 100
+seed: 777
+out_dir: ${claude_dir:}/outputs/eval/${now:%Y-%m-%d_%H-%M-%S}
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${out_dir}

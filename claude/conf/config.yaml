@@ -1,0 +1,22 @@
+defaults:
+  - data: default
+  - model: cvae
+  - trainer: default
+  - logger: csv
+  - experiment: null
+  - _self_
+
+seed: 42
+monitor: val/score        # checkpoint / sweep objective (lower is better), see README
+early_stopping_patience: 0  # epochs; 0 disables
+test_after_fit: true
+surrogate_path: null      # default: claude/data/surrogate_{scaled,unscaled}.pt
+
+hydra:
+  job:
+    chdir: false          # paths in SSM_Driver are relative to the repo root, so never change cwd
+  run:
+    dir: ${claude_dir:}/outputs/single/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: ${claude_dir:}/outputs/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}

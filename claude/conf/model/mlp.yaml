@@ -1,0 +1,11 @@
+# Plain regression baseline (no CVAE). Run with:  python claude/train.py model=mlp monitor=val/mse
+# Same network / optimiser / schedule / data / step budget as the CVAE; MSE on components is the only loss.
+_target_: openlimb_cvae.lit_mlp.LimbMLP
+
+width: 256
+depth: 4
+dropout: 0.0
+lr: 1.0e-3
+weight_decay: 1.0e-4
+warmup_epochs: 3
+meas_noise: 0.0

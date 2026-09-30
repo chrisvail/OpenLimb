@@ -1,0 +1,41 @@
+MLP checkpoint: claude/outputs/single/2026-09-30_14-33-03/checkpoints/best.ckpt
+generating 1024 test limbs with the original docker generator (seed 777) ...
+test limbs identical to the CVAE evaluation set: True
+
+=== A. Measurement accuracy (ORIGINAL SSM_Driver measurements of the predicted limb vs the request) ===
+[MLP: 1024 limbs, 1 answer per request]
+measure          mean mm  |err| mean  |err| std  |err| max  bias mm  % mean  % std  % max
+Circumference 1    341.2       0.818      0.794       7.68   -0.201   0.244  0.245   3.21
+Circumference 2    330.1       0.875      0.817       8.29   -0.298   0.271  0.263   3.55
+Circumference 3    316.2       1.041      0.808       7.78   -0.613   0.337  0.271   3.30
+Circumference 4    300.5       1.202      0.847       8.52   -0.845   0.413  0.310   3.64
+Length 1           135.2       0.500      0.461       3.81   +0.241   0.396  0.431   4.80
+Width 1            126.1       0.313      0.277       2.37   -0.007   0.253  0.232   2.56
+Width 2            132.1       0.316      0.283       2.30   -0.025   0.244  0.224   2.16
+ALL                            0.723      0.735       8.52   -0.250   0.308  0.298   4.80
+
+Headline statistics (identical definitions for both models):
+  mean error (mm)                                  MLP     0.723    CVAE     0.371
+  mean error (%)                                   MLP     0.308    CVAE     0.171
+  median error (mm)                                MLP     0.498    CVAE     0.264
+  99 % of measurements within (mm)                 MLP     3.261    CVAE     1.817
+  99 % of measurements within (%)                  MLP     1.349    CVAE     0.860
+  worst error (mm)                                 MLP     8.517    CVAE     6.065
+  worst error (%)                                  MLP     4.799    CVAE     7.644
+  limbs with any measurement > 5 mm off (%)        MLP     0.879    CVAE     0.098
+  limbs with any measurement > 1 % off (%)         MLP    10.156    CVAE     4.004
+
+=== B. Plausibility (inside the generator's parameter box) ===
+  outside box: MLP 0.6%  (>5 % of half-range: 0.1%, max exceedance 0.062)   CVAE 2.1%
+
+=== C. Shape distance to the TRUE limb (1000 limbs, mm) ===
+                                 chamfer  hausdorff  pt-to-plane  vertex rmse
+  MLP (single answer)               2.87      10.21         2.32         6.04
+  CVAE encoder z (sees limb)        0.95       2.00         0.40         1.10
+  CVAE prior, mean of 4             3.60      13.40         3.10         8.11
+  CVAE prior, best of 4             2.42       8.36         1.82         5.09
+
+=== D. Time per request, this machine (16 threads, median of repeats, ms) ===
+       1 limbs: MLP 0.260 ms   CVAE 0.285 ms
+      64 limbs: MLP 0.622 ms   CVAE 0.620 ms
+   64000 limbs: MLP 87.667 ms   CVAE 89.232 ms

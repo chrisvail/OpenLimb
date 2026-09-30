@@ -1,0 +1,7 @@
+scale: true          # true: 10 SSM modes + tibia scale (mm measurements); false: size-normalised limb
+batch_size: 512
+steps_per_epoch: 100   # fresh batches per epoch (data is sampled on the fly, nothing is stored)
+n_val: 512             # fixed validation limbs with exact measurements
+n_test: 1024
+num_workers: 0
+

@@ -1,0 +1,30 @@
+defaults:
+  - data: default
+  - logger: csv
+  - _self_
+
+seed: 42
+data:                     # the surrogate is fitted on freshly *measured* limbs, streamed (not stored)
+  exact_train: true
+  batch_size: 256
+  steps_per_epoch: 30
+  num_workers: 8         # exact measurement is ~4.5ms/limb; parallelise it
+model:
+  width: 256
+  depth: 3
+  lr: 2.0e-3
+  weight_decay: 1.0e-5
+
+trainer:
+  max_epochs: 25
+  accelerator: auto
+  devices: 1
+  log_every_n_steps: 25
+  enable_progress_bar: true
+  enable_model_summary: false
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${claude_dir:}/outputs/surrogate/${now:%Y-%m-%d_%H-%M-%S}

@@ -1,0 +1,4 @@
+_target_: lightning.pytorch.loggers.WandbLogger
+project: Open Limb SSM
+name: cvae-${now:%Y%m%d-%H%M%S}-${hydra:job.num}
+save_dir: ${hydra:runtime.output_dir}

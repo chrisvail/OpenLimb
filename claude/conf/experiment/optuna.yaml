@@ -1,0 +1,28 @@
+# @package _global_
+# python claude/train.py -m experiment=optuna
+defaults:
+  - override /hydra/sweeper: optuna
+
+trainer:
+  max_epochs: 60
+
+early_stopping_patience: 15
+
+hydra:
+  sweeper:
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 1
+    direction: minimize            # objective = train.py return value = best `monitor`
+    study_name: openlimb_cvae
+    storage: null                  # e.g. sqlite:///claude/outputs/optuna.db to resume / share studies
+    n_trials: 30
+    n_jobs: 1
+    params:
+      model.z_dim: choice(2, 3, 4, 6)
+      model.beta: tag(log, interval(1e-4, 1e-1))
+      model.width: choice(128, 256, 512)
+      model.depth: choice(2, 4, 6)
+      model.lr: tag(log, interval(3e-4, 3e-3))
+      model.w_prior_meas: tag(log, interval(0.1, 10))
+      model.w_vert: choice(0.0, 0.1, 1.0)

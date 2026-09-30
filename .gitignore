@@ -6,3 +6,24 @@ __pycache__
 /imgs
 /nn_meshes
 /.vscode
+
+# Python environment / tooling
+.venv/
+.ipynb_checkpoints/
+
+# Model checkpoints (*.pt is already ignored above)
+*.ckpt
+
+# Hydra / Lightning run output (claude/): checkpoints, logs, evaluation arrays, sweeps
+/claude/outputs/
+outputs/
+multirun/
+lightning_logs/
+.hydra/
+
+# Temporary docker-generated limbs written (and deleted) by claude/evaluate.py
+/claude/data/eval_tmp*/
+
+# NOTE: these in claude/ are deliberately tracked: claude/data/lr_map.npz (1 KB regression matrix the code
+# needs), claude/report/ (write-up, figures, eval reports) and claude/conf/. The frozen measurement
+# surrogate claude/data/surrogate_scaled.pt is ignored via *.pt; rebuild it with claude/train_surrogate.py.
