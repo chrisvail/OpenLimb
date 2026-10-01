@@ -93,4 +93,6 @@ Every run/trial gets its own folder under `claude/outputs/multirun/<time>/<n>/` 
 ## Files
 * `openlimb_cvae/geometry.py` - `SSMGeometry` (efficient, identical maths to `LegMeasurementDataset.get_verts`, reuses `Measurements` and `get_measures`), `ComponentSampler`, plausibility box.
 * `openlimb_cvae/data.py` - `LimbDataModule` (streaming); `lit_cvae.py` - `LimbCVAE`; `lit_surrogate.py`; `networks.py`.
+* `openlimb_cvae/fast_measure.py` - `FastMeasure` (same numbers as `SSM_Driver.measure`, 5-8× faster in batches) and `BoxMap` (limb numbers <-> the generator's box coordinates).
+* `openlimb_cvae/ga.py` - the notebook GA, its LM refinement fixed, an improved GA, and box-constrained Gauss-Newton; `evaluate_ga.py` compares them with the CVAE (write-up §8.3).
 * `conf/` - hydra config groups (`data`, `model`, `trainer`, `logger`, `experiment`).

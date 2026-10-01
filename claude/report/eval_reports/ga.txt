@@ -1,0 +1,52 @@
+generating 1024 test limbs with the original docker generator (seed 777) ...
+test limbs identical to the CVAE / MLP evaluation set: True
+improved GA settings: {'pop': 32, 'gens': 50, 'parents': 8, 'selection': 'sss', 'crossover': 'blend_gene', 'p_mut': 0.3, 'sigma0': 0.3, 'sigma1': 0.03}
+  notebook: 790 s wall
+  improved: 661 s wall
+  gn: 36 s wall
+  gn_random: 332 s wall
+
+=== A/B. Measurement accuracy (ORIGINAL SSM_Driver measurements vs the request) and plausibility ===
+method                          mean mm     mean %  median mm     p99 mm      p99 %   worst mm    worst %     >5mm %      >1% %  outside %   evals      n
+GA (notebook)                     1.544     0.6487      1.096      6.677      2.284       12.8      3.864      22.27      75.39       97.9    1582   1024
+GA (notebook) + LM (fixed)       0.0148   0.006854          0     0.4969     0.1988      2.916      1.998          0     0.1953       96.9    1831   1024
+GA (improved)                    0.5468     0.2137     0.2974      3.013      1.036      7.936      2.396     0.5859       6.25        0.0    1530   1024
+GA (improved) + GN             0.002397  0.0008834  5.019e-10  8.259e-07  4.581e-07      1.812     0.4141          0          0        0.0    1623   1024
+GN (box centre)               9.578e-05   2.34e-05  8.384e-11  4.707e-07  2.221e-07     0.2829    0.06482          0          0        0.0      96   1024
+GN (random start)              0.007179   0.002907  2.162e-10  9.166e-07  4.429e-07      20.92      5.321    0.06104     0.1709        0.0     110   8192
+CVAE (8 random codes)            0.3706     0.1708      0.264      1.817     0.8604      6.065      7.644    0.09766      4.004        2.1     nan   8192
+plain MLP                        0.7235     0.3082     0.4981      3.261      1.349      8.517      4.799     0.8789      10.16        0.6     nan   1024
+
+per-measurement mean |error| (mm):  Circ 1  Circ 2  Circ 3  Circ 4  Length 1  Width 1  Width 2
+  GA (notebook)               2.55  2.13  1.84  1.77  0.795  0.831  0.893
+  GA (notebook) + LM (fixed)  0.0182  0.0258  0.0171  0.0098  0.00425  0.0128  0.0157
+  GA (improved)               0.942  0.959  0.849  0.466  0.106  0.25  0.256
+  GA (improved) + GN          0.00398  0.00541  0.00271  0.00144  0.000499  0.0012  0.00154
+  GN (box centre)             0.000163  0.000276  0.000173  3.63e-05  1.95e-08  1.2e-05  9.62e-06
+  GN (random start)           0.0114  0.01  0.0104  0.00771  0.00204  0.00483  0.00377
+  CVAE (8 random codes)       0.461  0.439  0.42  0.489  0.379  0.2  0.206
+  plain MLP                   0.818  0.875  1.04  1.2  0.5  0.313  0.316
+
+exceedance beyond the box of the implausible limbs (fraction of half-width): GA (notebook): median 0.65, max 1.81; GA (notebook) + LM (fixed): median 0.85, max 3.98
+
+=== C. Shape distance to the TRUE limb (1000 limbs, mm) ===
+                                 chamfer  hausdorff  pt-to-plane  vertex rmse
+  GA (notebook)                     6.97      27.94         6.53        17.99
+  GA (notebook) + LM (fixed)        6.71      27.49         6.29        17.11
+  GA (improved)                     4.00      15.19         3.52         9.36
+  GA (improved) + GN                3.51      12.95         3.01         7.71
+  GN (box centre)                   3.08      11.07         2.54         6.57
+
+=== D. Families: 8 limbs per request, 500 requests (vertex RMSE, mm) ===
+  family spread:               GN random start 5.85   CVAE 5.14
+  true limb -> nearest member: GN random start 3.83   CVAE 3.86
+  GN member -> nearest CVAE member 4.10;  CVAE member -> nearest GN member 3.89
+
+=== Time per request, this machine (16 threads, median over 20 requests) ===
+  GA (notebook)                                           1.360 s
+  GA (notebook) + LM (fixed)                              1.769 s
+  GA (improved)                                           1.200 s
+  GA (improved) + GN                                      1.304 s
+  GN (box centre)                                         0.108 s
+  GA (notebook), as written: original code, unbatched    51.224 s
+  CVAE: 0.29 ms for 1 limb, 0.62 ms for 64 (evaluate_mlp.py)

@@ -34,7 +34,7 @@ class LimbCVAE(L.LightningModule):
                  test_exact_n=1024):
         super().__init__()
         self.save_hyperparameters()
-        kw = dict(width=width, depth=depth, dropout=dropout)
+        kw = {"width": width, "depth": depth, "dropout": dropout}
         self.encoder = Encoder(n_measurements, n_components, z_dim, **kw) if z_dim > 0 else None
         self.decoder = Decoder(n_measurements, z_dim, n_components, **kw)
         self.surrogate = MeasurementSurrogate(n_components, n_measurements, **(surrogate_arch or {}))

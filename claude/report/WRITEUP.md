@@ -7,7 +7,7 @@
 ## 1. Summary of findings
 
 1. **Generated limbs have the requested measurements.** The mean error is 0.37 mm (0.17 %). Only 0.1 % of generated limbs have any measurement more than 5 mm off.
-2. **This is 4–6× more accurate than the genetic algorithm (GA) and about 2× more accurate than a plain MLP regressor of identical architecture trained on the same data** (0.37 vs 0.72 mm on the same 1024 test limbs; the earlier NN's logged ≈ 2.5 % error is a much weaker baseline). It is also tens of thousands of times faster than the GA: 1 ms for 64 limbs, against roughly 20–40 s for one GA limb. The plain MLP is as fast as the CVAE but returns only one limb per request.
+2. **This is about 2× more accurate than a plain MLP regressor of identical architecture trained on the same data** (0.37 vs 0.72 mm on the same 1024 test limbs), and 4× more accurate than the genetic algorithm (GA) as configured in the notebook (1.54 mm). **Repaired optimisation is more accurate than the CVAE, however:** Gauss–Newton constrained to OpenLimbTT's plausible region matches the measurements essentially exactly (mean 0.0001 mm), with every limb plausible, in about 0.1 s per limb (§8.3). The CVAE's advantages over it are speed (0.6 ms for 64 limbs, against ~7 s) and a learnt family. The plain MLP is as fast as the CVAE but returns only one limb per request.
 3. **The same measurements produce genuinely different shapes.** A typical family member differs from the family average by 5.4 mm per vertex, while its measurements move by less than 0.5 mm.
 4. **98 % of generated limbs are plausible**, meaning OpenLimbTT's own generator could have produced them.
 5. **Seven measurements pin down about 95 % of OpenLimbTT's shape variation.** The families represent the remaining 5 %.
@@ -42,7 +42,7 @@ Seven measurements cannot fix eleven numbers, so about four degrees of freedom r
 
 This explains why the earlier approaches struggled:
 - **NN regression** is trained to minimise average error, so it learns to output the *average* of all limbs that share the measurements. Circumference is a nonlinear function of shape, so the average of several limbs with circumference 300 mm does not in general have circumference 300 mm. In practice this effect is small: a plain MLP of the same architecture as the CVAE, trained on the same data, misses the measurements by 0.72 mm on average (0.31 %), with a slight bias towards *smaller* circumferences (§8.3). The bigger limitation of regression is that it returns a single limb.
-- **The GA** searches the 11 numbers from scratch for every request. It has a limited budget (50 generations × 32 candidates) and no plausibility constraint. It is slow, and it still returns only one of the many valid answers.
+- **The GA** searches the 11 numbers from scratch for every request. It has a limited budget (50 generations × 32 candidates) and no plausibility constraint. It is slow, and it still returns only one of the many valid answers. §8.3 shows that its accuracy was limited mainly by its configuration: optimisation constrained to the plausible region can match the measurements exactly.
 
 What we want instead is a model that returns a **family**: as many different limbs as we ask for, all with the requested measurements, all plausible.
 
@@ -253,41 +253,84 @@ Across all 57 344 individual measurements (8192 limbs × 7), the median error is
 
 **Analysis.** The encoded-code errors match the surrogate's own errors almost measurement by measurement. The model is doing what it was asked: satisfy the surrogate. Random codes add only about 0.05 mm on top. Improving the surrogate, or fine-tuning the CVAE for a short time against exact measurements, is therefore the most direct route to better accuracy. At 0.37 mm against a 5 mm target, this is not currently a priority.
 
-### 8.3 More accurate and far faster than the GA; about 2× more accurate than a plain MLP, which returns only one answer
+### 8.3 Against a plain MLP and against optimisation (GA and Gauss–Newton)
 
-**Point.** The CVAE beats the GA by a wide margin on accuracy and speed. Against a plain MLP regressor of the same architecture, trained on the same data, it is about twice as accurate, equally fast, and the only one of the two that returns a family.
+**Point.** Against a plain MLP regressor of the same architecture, trained on the same data, the CVAE is about twice as accurate, equally fast, and the only one of the two that returns a family. Against optimisation the picture is different. The GA as it was configured in `genetic_alg.ipynb` is 4× less accurate than the CVAE and returns implausible limbs. Once repaired, optimisation reproduces the measurements **essentially exactly** (median error below 10⁻⁹ mm), with every limb plausible. It is more accurate than the CVAE on every statistic. What the CVAE keeps is speed, about 400× faster per limb and ~10 000× faster per 64-limb family, and a family that is learnt rather than constructed.
 
-**How the plain MLP was built (for a fair comparison).** It is the CVAE's decoder with the code removed: the same residual MLP (width 256, 4 blocks), input (the 7 measurements, standardised), output (the 11 standardised limb numbers), optimiser (AdamW, 10⁻³, weight decay 10⁻⁴), 3-epoch warm-up + cosine schedule, gradient clipping, seed, and data (512 × 100 × 150 fresh limbs, with training measurements from the same surrogate). Its only loss is the mean squared error on the limb numbers: no KL, no measurement loss, no plausibility loss. The checkpoint with the lowest validation error was kept. It was evaluated on **the identical 1024 test limbs** as the CVAE, with the original measurement code, using exactly the same statistics. The CVAE column uses its 8192 random-code limbs (8 per request).
+All methods below were run on **the same 1024 test limbs** and judged by the original measurement code with the same statistics. This settles the earlier caveat that the GA numbers came from different limbs.
 
-**Evidence.**
+#### 8.3.1 How the comparison methods were built
 
-| | **CVAE** | **Plain MLP** (same net, same data; 1024 limbs) | GA (`GA_results*.csv`, 275 + 475 limbs) | earlier NN (W&B logs) |
-|---|---|---|---|---|
-| mean error | **0.37 mm (0.17 %)** | 0.72 mm (0.31 %) | 1.6–2.1 mm (0.7–0.9 %) | ≈ 2.5 % |
-| median error | **0.26 mm** | 0.50 mm | — | — |
-| 99 % of measurements within | **1.8 mm (0.86 %)** | 3.3 mm (1.35 %) | 7.3–8.8 mm (2.6–3.1 %) | — |
-| worst error | 6.1 mm (7.6 %) | 8.5 mm (4.8 %) | 15–18 mm | ≈ 20 % in a batch |
-| limbs with any measurement > 5 mm off | **0.1 %** | 0.9 % | 24–42 % | — |
-| limbs with any measurement > 1 % off | **4.0 %** | 10.2 % | 78–94 % | — |
-| answers per request | **any number** | 1 | 1 | 1 |
-| time per request (this laptop CPU) | 0.29 ms for 1 limb, 0.62 ms for 64, 89 ms for 64 000 | 0.26 ms for 1 limb, 0.62 ms for 64 different requests, 88 ms for 64 000 | ≈ 20–40 s for 1 limb | < 1 ms for 1 limb |
-| plausibility | enforced: 97.9 % inside the box | not enforced, but 99.4 % inside (the average of plausible limbs is itself plausible) | no | no |
-| distance to the true limb (chamfer) | 3.6 mm per random-code member; 2.4 mm best of 4 | 2.9 mm | — | — |
+**Plain MLP.** It is the CVAE's decoder with the code removed: the same residual MLP (width 256, 4 blocks), input (the 7 measurements, standardised), output (the 11 standardised limb numbers), optimiser (AdamW, 10⁻³, weight decay 10⁻⁴), 3-epoch warm-up + cosine schedule, gradient clipping, seed, and data (512 × 100 × 150 fresh limbs, with training measurements from the same surrogate). Its only loss is the mean squared error on the limb numbers: no KL, no measurement loss, no plausibility loss. The checkpoint with the lowest validation error was kept.
+
+**GA as in the notebook.** `genetic_alg.ipynb`'s pygad set-up, unchanged: 32 candidates × 50 generations, genes = standardised limb numbers in [−3, 3], steady-state selection of 4 parents, single-point crossover, "random" mutation on 20 % of genes. The fitness is minus the mean squared *relative* measurement error (`SSM_Driver.MeasurementLoss`). Re-running it on the test limbs gives 1.54 mm mean error, in line with the 1.6–2.1 mm recorded in `GA_results*.csv`.
+
+**What was wrong with it.** Reading the notebook and pygad's source turned up four problems:
+1. **Mutation can never settle.** Because a `gene_space` is given, pygad's "random" mutation *replaces* 2 of the 11 genes in every child with a fresh uniform draw from the whole [−3, 3] range, at every generation. There is no small step, so the search cannot fine-tune a good candidate.
+2. **Most of the search space is implausible.** A box of ±3 standard deviations on each limb number is mostly outside the region OpenLimbTT's generator can produce (§2.2). **97.9 %** of the notebook GA's answers are outside the plausible box, by a median of 65 % of the box half-width.
+3. **The Levenberg–Marquardt refinement never had an effect.** `func` was `dataset.get_measures`, which expects raw limb numbers, but was given standardised ones. The finite-difference Jacobian was also reshaped in the wrong order and had its sign flipped. Finally, the refined limb was only printed; the unrefined `best_solution` was what went into the CSV.
+4. **It is slow.** Each fitness call measured the true limb again as well as the candidate, one limb at a time: **51 s** per request on this laptop.
+
+**Improvements tried.** None of the changes alters the objective:
+- **Faster exact measurement** (`openlimb_cvae/fast_measure.py`). The original code intersects all ~50 000 mesh edges with every measurement plane. The new version applies the same formulas only to the band of edges a plane can reach, and checks per limb that the band assumption holds, falling back to the original code if it does not. On 1536 random limbs, including limbs far outside the box, its answers match the original code to 10⁻¹³ mm. It is 5–8× faster per limb when a GA generation is measured in one batch. Every number in this section still re-measures the final limbs with the **original** code.
+- **Improved GA** (`openlimb_cvae/ga.py`, same library, same objective, same ~1600-measurement budget). The genes are the generator's own box coordinates in [−1, 1], so every candidate is plausible by construction. Mutation is a Gaussian step on 30 % of genes, whose size shrinks from 0.3 to 0.03 box half-widths over the run. The GA uses per-gene blend crossover, steady-state selection of 8 parents, and keeps 2 elites. These settings were chosen from about 35 configurations (operators, mutation schedule, population/generation split) on **48 separate development limbs**, never on the test limbs, and confirmed with a second seed (0.52 and 0.43 mm on the development limbs).
+- **The notebook's LM refinement, fixed.** The faults in item 3 are corrected and nothing else is changed: 10 steps, unconstrained, starting from the notebook GA's answer.
+- **Gauss–Newton inside the plausible box (GN).** This is a local least-squares solver on the relative measurement error, working in box coordinates. Each step is the smallest change to the limb numbers that removes the linearised error (pseudo-inverse, because there are 7 equations for 11 unknowns). The step is limited to the box and halved until the error drops. The Jacobian comes from finite differences, i.e. 22 extra measurements in one batch, so no gradient of the measurement code is needed. GN was not tuned. It was run from three kinds of starting point: the improved GA's answer, the **centre of the box** (no GA at all), and **random plausible limbs** (8 per request, giving a family).
+
+#### 8.3.2 Evidence
+
+What each change contributes (1024 test requests; errors in mm against the original measurement code):
+
+| method | mean | median | 99 % within | worst | limbs any > 1 % off | outside box | measurements per request | time per request |
+|---|---|---|---|---|---|---|---|---|
+| GA (notebook), as recorded in the CSVs (other limbs) | 1.6–2.1 | 1.2–1.6 | 7.3–8.8 | 15–18 | 77–94 % | 98 % | 1600 | 51 s as written |
+| GA (notebook), rerun on the test limbs | 1.54 | 1.10 | 6.68 | 12.8 | 75.4 % | 97.9 % | 1582 | 1.4 s ¹ |
+| + its LM refinement, fixed | 0.015 | < 10⁻⁹ | 0.50 | 2.92 | 0.2 % | 96.9 % | 1831 | 1.8 s ¹ |
+| GA (improved) | 0.55 | 0.30 | 3.01 | 7.94 | 6.3 % | **0 %** | 1530 | 1.2 s |
+| GA (improved) + GN | 0.0024 | < 10⁻⁹ | < 10⁻⁶ | 1.81 | 0 % | **0 %** | 1623 | 1.3 s |
+| **GN from the box centre (no GA)** | **0.0001** | **< 10⁻⁹** | **< 10⁻⁶** | **0.28** | **0 %** | **0 %** | **96** | **0.11 s** |
+| GN from 8 random plausible limbs (8192 limbs) | 0.0072 | < 10⁻⁹ | < 10⁻⁶ | 20.9 | 0.2 % | **0 %** | 110 per limb | ≈ 0.1 s per limb |
+
+¹ with the fast measurement; the notebook as written takes 51 s.
+
+Against the learnt models (same statistics as §8.1):
+
+| | **CVAE** | **plain MLP** | **GA (notebook)** | **GA (improved)** | **GN, box centre** | **GN, random starts** |
+|---|---|---|---|---|---|---|
+| mean error | 0.37 mm (0.17 %) | 0.72 mm (0.31 %) | 1.54 mm (0.65 %) | 0.55 mm (0.21 %) | **0.0001 mm** | 0.007 mm |
+| median error | 0.26 mm | 0.50 mm | 1.10 mm | 0.30 mm | **< 10⁻⁹ mm** | < 10⁻⁹ mm |
+| 99 % of measurements within | 1.8 mm (0.86 %) | 3.3 mm (1.35 %) | 6.7 mm (2.3 %) | 3.0 mm (1.0 %) | **< 10⁻⁶ mm** | < 10⁻⁶ mm |
+| worst error | 6.1 mm (7.6 %) | 8.5 mm (4.8 %) | 12.8 mm (3.9 %) | 7.9 mm (2.4 %) | **0.28 mm (0.06 %)** | 20.9 mm (5.3 %) |
+| limbs with any measurement > 5 mm off | 0.1 % | 0.9 % | 22.3 % | 0.6 % | **0 %** | 0.06 % |
+| limbs with any measurement > 1 % off | 4.0 % | 10.2 % | 75.4 % | 6.3 % | **0 %** | 0.2 % |
+| outside the plausible box | 2.1 % | 0.6 % (not enforced) | 97.9 % | **0 %** | **0 %** | **0 %** |
+| answers per request | any number | 1 | 1 | 1 | 1 | any number |
+| time (this laptop CPU) | **0.29 ms for 1 limb, 0.62 ms for 64** | 0.26 ms for 1 limb | 51 s (1.4 s with fast measurement) | 1.2 s | 0.11 s | ≈ 0.1 s per limb, ≈ 7 s for 64 |
+| distance to the true limb (chamfer) | 3.6 mm per random-code member; 2.4 mm best of 4 | 2.9 mm | 7.0 mm | 4.0 mm | 3.1 mm | — |
+| family spread (8 members, 500 requests) | 5.1 mm | — | — | — | — | 5.9 mm |
+| true limb → nearest of 8 members (vertex RMSE) | 3.9 mm | — | — | — | — | 3.8 mm |
 
 ![Plain MLP vs CVAE](figs/fig_compare_mlp.png)
 
-*Timing, same 16-thread laptop CPU, median of repeats (`claude/evaluate_mlp.py`): CVAE and MLP measured back-to-back. The GA figure is an estimate: 1600 fitness evaluations per limb (50 generations × 32 candidates), each calling the exact measurement code twice at about 12 ms per call. The earlier-NN percentages are read from W&B training curves and assume they were logged in mm.*
+![Optimisation vs CVAE](figs/fig_compare_ga.png)
+*Left and middle: cumulative distributions of measurement error on a log scale. Errors below 10⁻⁸ mm are drawn at 10⁻⁸ mm; that is where most Gauss–Newton results sit. Right: share of returned limbs outside the plausible box.*
 
-**Analysis.**
-- **CVAE vs GA.** The CVAE learns the whole inverse mapping once, so answering a request is one cheap forward pass. The GA solves each request from scratch with a small budget, no knowledge of which shapes are plausible, and returns one answer.
-- **CVAE vs plain MLP: modest accuracy gain, no speed cost.** The CVAE is about 2× more accurate on the mean, median and 99th-percentile error. The share of limbs with any measurement more than 1 % off is 4.0 % against 10.2 %, and more than 5 mm off is 0.1 % against 0.9 %. The single worst error is mixed: smaller for the CVAE in mm (6.1 against 8.5 mm) but smaller for the MLP in percent (4.8 % against 7.6 %), since the CVAE's worst case is on a short Length 1 measurement. Each is one extreme sample.
-- **The averaging effect exists, but is small.** The MLP's signed errors are biased towards smaller-than-requested circumferences (−0.20, −0.30, −0.61 and −0.85 mm for circumferences 1–4), which is what the "average of several limbs" argument in §2.4 predicts. It contributes but does not dominate: the MLP's typical error is still only 0.3 %.
-- **The MLP's single answer is close to the true limb but is not "the" limb.** Its chamfer distance to the true limb (2.9 mm) is smaller than that of a typical random-code CVAE member (3.6 mm), which is expected: the average minimises expected squared error, whereas the CVAE deliberately spreads its answers. What the MLP cannot do is show the 5.4 mm of shape variation that the same measurements allow (§8.6).
-- **What the comparison does *not* show.** The CVAE differs from the MLP in two ways at once: it has a code, *and* it is trained with extra losses (measurement consistency for both encoded and random codes, and plausibility). I did not separate them, so the accuracy gain cannot be attributed to the code alone. An MLP trained with the measurement-consistency loss, or a CVAE with the measurement losses switched off, would settle it (§11).
+*Timing: same 16-thread laptop CPU, median over 20 requests (`claude/evaluate_ga.py`, `claude/evaluate_mlp.py`). "As written" is the notebook's own code path, timed on 3 requests. Full output: `report/eval_reports/ga.txt`.*
+
+#### 8.3.3 Analysis
+
+- **The notebook's GA was limited by its set-up, not by the idea.** Keeping the library, objective and budget, and changing only the search space and operators, cuts the mean error from 1.54 to 0.55 mm. The share of limbs with any measurement more than 1 % off falls from 75 % to 6 %, and every answer becomes plausible. A pure GA at this budget is still less accurate than the CVAE (0.55 vs 0.37 mm). The development runs suggest this is close to what a GA can do with ~1600 measurements: the best configuration found reached about 0.4–0.5 mm.
+- **The problem is almost linear, so local least squares solves it.** Gauss–Newton from the centre of the box needs about 4 iterations (96 measurements). It matches every measurement to within 0.001 mm on 1023 of the 1024 requests; the one exception has a worst error of 0.28 mm. Starting from the GA's answer does *not* help: it is 17× more expensive and slightly less reliable (8 of 1024 requests stall, mostly where the GA put the limb against the box edge). **For this problem the GA is unnecessary.** The repaired notebook refinement reaches similar accuracy but inherits the notebook GA's implausible starting points (97 % outside the box). Constraining the search to the box matters as much as the refinement does.
+- **Why optimisation beats the CVAE on accuracy.** It uses the exact measurement code at every step. The CVAE is trained against the surrogate and inherits its ~0.3 mm error (§8.2). The requests here are also exactly reachable, since they come from OpenLimbTT limbs, which suits an exact solver. For clinical measurements that OpenLimbTT cannot reach exactly, GN would return the closest plausible least-squares fit; this has not been tested (§10).
+- **Optimisation can also produce families.** Starting GN from 8 random plausible limbs gives 8 different limbs that all match the measurements. Their spread (5.9 mm) is close to the CVAE's (5.1 mm, same 8-member protocol), and they sit about as close to the true limb (3.8 vs 3.9 mm to the nearest member). This is the exact-measurement version of the reference family in §8.8. It fails more often than the box-centre start: 0.9 % of runs stall, and the worst is 20.9 mm. Every limb can be re-measured, though, so failures can be detected and restarted.
+- **What the CVAE still offers.** Speed and a learnt distribution. One limb takes 0.3 ms against 0.1 s for GN (~400×); a 64-limb family takes 0.6 ms against ~7 s (~10 000×). That matters for large-scale generation or interactive use, but not for processing a few hundred clinical records. The CVAE's family is also a *learnt* conditional distribution: how likely each shape is given the measurements, as implied by OpenLimbTT's generator. The GN family is simply wherever random starting points happen to be projected. Which of the two better describes "limbs with these measurements" is not tested here.
+- **CVAE vs plain MLP.** The CVAE is about 2× more accurate on the mean, median and 99th-percentile error. The share of limbs with any measurement more than 1 % off is 4.0 % against 10.2 %, and more than 5 mm off is 0.1 % against 0.9 %. The single worst error is mixed: smaller for the CVAE in mm (6.1 against 8.5 mm) but smaller for the MLP in percent (4.8 % against 7.6 %), since the CVAE's worst case is on a short Length 1 measurement. The MLP's signed errors are biased towards smaller-than-requested circumferences (−0.20, −0.30, −0.61 and −0.85 mm for circumferences 1–4). That is the "average of several limbs" effect predicted in §2.4, but it does not dominate: the MLP's typical error is still only 0.3 %. The MLP's single answer is close to the true limb (2.9 mm chamfer, closer than a typical CVAE member at 3.6 mm), which is expected because the average minimises expected squared error. What it cannot show is the 5.4 mm of shape variation the measurements allow (§8.6).
+- **What the MLP comparison does *not* show.** The CVAE differs from the MLP in two ways at once: it has a code, *and* it is trained with extra losses (measurement consistency for both encoded and random codes, and plausibility). I did not separate them, so the accuracy gain cannot be attributed to the code alone (§11).
 
 **Caveats.**
-- The CVAE and the plain MLP are compared on identical test limbs. The GA and earlier-NN columns still come from different random limbs.
-- In `genetic_alg.ipynb`, the Levenberg–Marquardt refinement step is computed and then overwritten on the next line. The recorded GA errors are therefore *before* refinement, and a corrected GA would do somewhat better.
+- The GA's settings were tuned on 48 development limbs, one run per configuration; GN was not tuned. The CVAE and MLP were not tuned either, apart from the plausibility weight.
+- Optimisation times are for one request at a time on a 16-thread CPU. Requests are independent, so throughput scales with cores; the CVAE's times are for a single forward pass.
+- The "as recorded" row uses different random limbs; every other row uses the 1024 test limbs.
 - One training run of the plain MLP, with the same untuned hyperparameters as the CVAE.
 
 ### 8.4 Generated limbs are plausible, and making them so is cheap
@@ -398,6 +441,7 @@ Across all 57 344 individual measurements (8192 limbs × 7), the median error is
 - **Coverage:** every reference limb has a CVAE limb about 1.9 mm away. That is barely more than the 1.7 mm between reference limbs themselves, so the CVAE family covers the reference family almost as densely as the reference family covers itself.
 - **Precision:** every CVAE limb has a reference limb about 2.0 mm away, so the CVAE is not inventing shapes the reference method would never reach.
 - **Limit of this test:** the reference family is itself a heuristic and not a perfect sample of all valid limbs, so this is strong corroboration rather than proof. If a narrower family is preferred, `generate.py temperature<1` shrinks it.
+- **The same check with the exact measurement code** (§8.3): Gauss–Newton from 8 random plausible limbs per request, no surrogate and no filtering, gives a family spread of 5.9 mm against the CVAE's 5.1 mm on the same 8-member protocol.
 
 ### 8.9 All four code numbers are used
 
@@ -453,7 +497,7 @@ Across all 57 344 individual measurements (8192 limbs × 7), the median error is
 1. **Real measurements.** Run the Sri Lankan measurement sets through the model. For each one, report the closest measurements OpenLimbTT can reach, found by optimisation; I'll call the leftover mismatch the "reachability gap". It says how far outside OpenLimbTT's range the patient is, per measurement, without needing a scan. Then report how the CVAE's errors compare with that gap.
 2. **The 40 scans.** As a case series, report the distance from each scan to its nearest family member, alongside OpenLimbTT's own best fit to that scan (the floor). First check that none of the 40 were among OpenLimbTT's 33 training scans.
 3. **Train with measurement noise** matched to clinical inter-rater variability before using real data.
-4. **Same-test-set comparison for the GA.** Rerun the GA (with its refinement bug fixed) on this report's test limbs. (The plain-MLP comparison is done, §8.3.)
+4. **CVAE vs optimisation families.** The GA / Gauss–Newton comparison on the test limbs is done (§8.3). Still open: whether the CVAE's learnt family or Gauss–Newton from random starts better represents "all plausible limbs with these measurements", and whether a CVAE limb followed by a few Gauss–Newton steps gives exact measurements at close to CVAE speed.
 5. **Ablation.** Separate the effect of the code from the effect of the extra losses: train an MLP with the measurement-consistency loss, and a CVAE without it.
 
 ## 12. Reproducing
@@ -468,6 +512,9 @@ python claude/generate.py ckpt=<best.ckpt> measurements=[300,290,280,270,120,110
 # plain-MLP baseline (§8.3)
 python claude/train.py model=mlp monitor=val/mse
 python claude/evaluate_mlp.py ckpt=<mlp best.ckpt>          # same 1024 limbs, same statistics, timing
+
+# GA / Gauss-Newton comparison (§8.3); ~45 min on 12 CPU workers
+python claude/evaluate_ga.py
 ```
 
 Measurements are given in mm in the order Circ 1–4, Len 1, Wid 1, Wid 2. Full numerical output of each evaluation is in `report/eval_reports/`. The final CVAE is `claude/outputs/single/2026-09-29_15-42-26/checkpoints/best.ckpt`; the plain MLP is `claude/outputs/single/2026-09-30_14-33-03/checkpoints/best.ckpt` (evaluation in `claude/outputs/eval/mlp/`).

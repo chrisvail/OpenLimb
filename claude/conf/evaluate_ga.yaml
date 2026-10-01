@@ -1,0 +1,28 @@
+cvae_ckpt: claude/outputs/single/2026-09-29_15-42-26/checkpoints/best.ckpt   # final CVAE (families + timing)
+cvae_eval: claude/outputs/eval/wplaus200    # its evaluate.py output (eval_data.npz) - same 1024 test limbs
+mlp_eval: claude/outputs/eval/mlp           # evaluate_mlp.py output (compare.json)
+n_limbs: 1024
+n_requests: null                            # optimise only the first n (smoke test); null = all
+seed: 777                                   # must equal evaluate.py's seed => identical test limbs
+n_shape_limbs: 1000                         # shape distance to the true limb
+k_random: 8                                 # random-start Gauss-Newton limbs per request (a family, like the CVAE's 8)
+n_timing: 20                                # requests timed per method, main process, all threads
+n_timing_original: 3                        # ... for the notebook exactly as written (original measurement code)
+workers: 12
+ga_improved:                                # chosen on 48 development limbs (not the test limbs), see report
+  pop: 32
+  gens: 50
+  parents: 8
+  selection: sss
+  crossover: blend_gene
+  p_mut: 0.3
+  sigma0: 0.3
+  sigma1: 0.03
+fig_dir: claude/report/figs
+out_dir: ${claude_dir:}/outputs/eval/ga
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${out_dir}
