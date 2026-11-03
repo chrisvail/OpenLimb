@@ -1,12 +1,12 @@
 """Independent evaluation of a trained CVAE against the ORIGINAL limb generator / measurement system.
 
-    python claude/evaluate.py ckpt=claude/outputs/single/<run>/checkpoints/best.ckpt
+    python claude/evaluation/evaluate.py ckpt=claude/outputs/single/<run>/checkpoints/best.ckpt
 
 * Test limbs come from GenerateRandomLimbs.py (docker), not from this package's sampler.
 * Meshes and measurements of every limb (true and generated) go through the original
   LegMeasurementDataset.get_verts / get_measures (SSM_Driver.py), in mm.
 * Sections: A measurement accuracy, B plausibility, C shape distances, D family diversity, E z-traversal.
-* Raw per-sample arrays are saved to eval_data.npz; `python claude/plot_eval.py <eval dir>` draws the figures.
+* Raw per-sample arrays are saved to eval_data.npz; `python claude/evaluation/plot_eval.py <eval dir>` draws the figures.
 """
 import os
 import shutil
@@ -14,8 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from openlimb_cvae.common import register_resolvers, setup_env  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import register_resolvers, setup_env  # noqa: E402
 
 setup_env()
 register_resolvers()
@@ -26,8 +26,8 @@ import torch  # noqa: E402
 from hydra.core.hydra_config import HydraConfig  # noqa: E402
 from omegaconf import DictConfig  # noqa: E402
 
-from openlimb_cvae.geometry import ROOT, ComponentSampler, _in_root  # noqa: E402
-from openlimb_cvae.lit_cvae import LimbCVAE  # noqa: E402
+from data.geometry import ROOT, ComponentSampler, _in_root  # noqa: E402
+from models.lit_cvae import LimbCVAE  # noqa: E402
 
 REPORT = []
 
@@ -48,7 +48,10 @@ def load_reference():
         d = ROOT / "data_components"
         ref = object.__new__(LegMeasurementDataset)
         ref.dtype, ref.device, ref.scale = torch.float64, "cpu", 1
-        ref.measure = SSM_Driver.measure
+        from data.measure_fixed import FixedMeasurements   # SSM_Driver.measure minus its edge-on-plane bug
+
+        ref.measure = FixedMeasurements(SSM_Driver.edge2vert.long(), SSM_Driver.face2edge.long(),
+                                        SSM_Driver.measurement_details)
         ref.raw_components = torch.load(d / "vert_components.pt").double()
         ref.mean_verts = torch.load(d / "mean_verts.pt").double()
         ref.face2vert = torch.load(d / "face2vert.pt")
@@ -132,7 +135,7 @@ def in_box_u(model, raw):
     return model.box_coords((raw.float() - model.comp_mean) / model.comp_std)
 
 
-@hydra.main(config_path="conf", config_name="evaluate", version_base="1.3")
+@hydra.main(config_path="../conf", config_name="evaluate", version_base="1.3")
 def main(cfg: DictConfig):
     torch.manual_seed(cfg.seed)
     out = Path(HydraConfig.get().runtime.output_dir)
@@ -161,7 +164,7 @@ def main(cfg: DictConfig):
     post_raw = decode_raw(model, m_norm, mus if zd else None)
     z = torch.randn(N * K, zd) if zd else None
     prior_raw = decode_raw(model, m_norm.repeat_interleave(K, 0), z)
-    say("=== A. Measurement accuracy (ORIGINAL SSM_Driver measurements of decoded limbs vs requested) ===")
+    say("=== A. Measurement accuracy (exact measurements of decoded limbs vs requested) ===")
     A_arr = {}
     for key, tag, raw, rep in (("prior", "prior z~N(0,I)", prior_raw, K), ("post", "posterior z=mu(m,c)", post_raw, 1)):
         got = orig_measures(ref, raw)

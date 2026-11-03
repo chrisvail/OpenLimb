@@ -43,8 +43,12 @@ class SSMGeometry(nn.Module):
             self.scale = bool(scale)
             self.normalise = normalise
             self.dtype = dtype
-            self.measure = SSM_Driver.measure
             self.measurement_details = SSM_Driver.measurement_details
+            # NOT SSM_Driver.measure: its `0 < t < 1` test drops the faces touching the plane's vertex (see measure_fixed.py)
+            from .measure_fixed import FixedMeasurements
+
+            self.measure = FixedMeasurements(SSM_Driver.edge2vert.long(), SSM_Driver.face2edge.long(),
+                                             self.measurement_details)
 
             raw = torch.load(d / "vert_components.pt").to(dtype)          # (10, 3V)
             mean = torch.load(d / "mean_verts.pt").to(dtype)              # (V, 3)

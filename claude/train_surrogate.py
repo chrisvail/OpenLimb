@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from openlimb_cvae.common import register_resolvers, setup_env, surrogate_path  # noqa: E402
+from common import register_resolvers, setup_env, surrogate_path  # noqa: E402
 
 setup_env()
 register_resolvers()
@@ -19,8 +19,8 @@ import torch  # noqa: E402
 from lightning.pytorch.callbacks import ModelCheckpoint  # noqa: E402
 from omegaconf import DictConfig  # noqa: E402
 
-from openlimb_cvae.data import LimbDataModule  # noqa: E402
-from openlimb_cvae.lit_surrogate import LitSurrogate  # noqa: E402
+from data.datamodule import LimbDataModule  # noqa: E402
+from models.lit_surrogate import LitSurrogate  # noqa: E402
 
 
 @hydra.main(config_path="conf", config_name="surrogate", version_base="1.3")

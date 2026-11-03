@@ -1,0 +1,14 @@
+ckpt: ???                 # path to a LimbCVAE .ckpt trained with model.meas_dropout=true
+baseline_ckpt: null       # optional plain LimbCVAE .ckpt: evaluated on the all-measurements pattern only
+n_limbs: 1024             # held-out limbs (this package's sampler, exact SSM_Driver measurements; seed-fixed)
+k_prior: 4                # prior samples (z ~ N(0,I)) per limb and mask pattern
+n_masks: 8                # random masks per number of observed measurements k (k = 0..6)
+n_diversity_limbs: 100    # limbs used for the per-vertex spread of the family
+seed: 777
+out_dir: ${claude_dir:}/outputs/eval/dropout_${now:%Y-%m-%d_%H-%M-%S}
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${out_dir}

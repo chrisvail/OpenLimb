@@ -1,9 +1,11 @@
 """Stage 2: train the conditional VAE (hydra + lightning).
 
     python claude/train.py                                   # single run
+    python claude/train.py model.meas_dropout=true           # measurement dropout: any subset of the 7 measurements may be missing
+    python claude/train.py model=mlp monitor=val/mse         # plain-MLP baseline
     python claude/train.py -m model.z_dim=2,3,4,6 model.beta=0.001,0.01,0.1   # grid sweep
     python claude/train.py -m experiment=optuna              # Optuna (TPE) sweep
-    python claude/train.py trainer=smoke data.n_max=2048      # quick smoke test
+    python claude/train.py trainer=smoke                     # quick smoke test
 
 Returns the best value of `monitor` (default val/score, lower is better) so sweepers can optimise it.
 """
@@ -13,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from openlimb_cvae.common import register_resolvers, setup_env, surrogate_path  # noqa: E402
+from common import register_resolvers, setup_env, surrogate_path  # noqa: E402
 
 setup_env()
 register_resolvers()
@@ -25,7 +27,7 @@ from hydra.core.hydra_config import HydraConfig  # noqa: E402
 from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint  # noqa: E402
 from omegaconf import DictConfig, OmegaConf  # noqa: E402
 
-from openlimb_cvae.data import LimbDataModule  # noqa: E402
+from data.datamodule import LimbDataModule  # noqa: E402
 
 
 @hydra.main(config_path="conf", config_name="config", version_base="1.3")

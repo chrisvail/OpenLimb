@@ -1,0 +1,286 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>OpenLimb annotator</title>
+<style>
+ html,body{margin:0;height:100%;font:13px system-ui,sans-serif;background:#1b1d21;color:#ddd;overflow:hidden}
+ #side{position:absolute;left:0;top:0;bottom:0;width:310px;overflow:auto;padding:10px;box-sizing:border-box;background:#23262b}
+ #view{position:absolute;left:310px;right:0;top:0;bottom:0}
+ #c{display:block;width:100%;height:100%}
+ #ref{display:block}
+ #ref{position:absolute;right:10px;bottom:10px;width:260px;height:340px;background:#15171a;border:1px solid #444}
+ h3{margin:10px 0 4px;font-size:13px;color:#9ab}
+ button,select{background:#343a42;color:#ddd;border:1px solid #555;padding:3px 7px;margin:2px 2px 2px 0;cursor:pointer}
+ button:hover{background:#444c56}
+ .slot{padding:3px 5px;margin:2px 0;border-left:6px solid;cursor:pointer;background:#2b2f35}
+ .slot.active{background:#3d4b5c}
+ .pt{display:inline-block;width:14px;height:14px;border-radius:7px;margin-right:3px;vertical-align:middle;border:1px solid #888}
+ .pt.set{border-color:#fff}
+ .val{float:right;color:#9d9}
+ #msg{color:#fc6;min-height:1.4em}
+ input[type=range]{width:100%}
+ small{color:#889}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head><body>
+<div id="side">
+ <b>OpenLimb annotator</b>
+ <div><select id="meshSel" style="width:200px"></select>
+  <button id="prev">&lt;</button><button id="next">&gt;</button></div>
+ <div id="msg"></div>
+ <h3>Landmarks <small>(click a row, then click the mesh)</small></h3>
+ <div id="slots"></div>
+ <h3>Measurements</h3>
+ <div id="readout"></div>
+ <h3>View</h3>
+ <div>mesh opacity <input id="opa" type="range" min="0.05" max="1" step="0.05" value="0.35"></div>
+ <div>point size <input id="psz" type="range" min="0.3" max="3" step="0.1" value="1"></div>
+ <label><input id="wire" type="checkbox"> wireframe</label>
+ <label><input id="planes" type="checkbox" checked> planes / slices</label>
+ <label><input id="refShow" type="checkbox" checked> reference limb</label>
+ <h3>Keys / mouse</h3>
+ <small>left-drag orbit, right-drag pan, wheel zoom.<br>
+ click mesh: place the active point (front surface; <b>Shift</b> = far side).<br>
+ drag a point: move it along the surface (<b>Shift</b> = far side).<br>
+ Backspace / Delete: clear active point. S: save. N / P: next / previous mesh.<br>
+ Circumference: 3 points on the circumference plane (any 3 around the limb).
+ Width: 2 points at the two extremes (medial / lateral) at the right height.
+ Length: 2 points. See the reference limb (bottom right) for where the SSM puts them.</small>
+ <div style="margin-top:8px"><button id="save">Save (S)</button> <button id="clear">Clear all</button></div>
+</div>
+<div id="view"><canvas id="c"></canvas><canvas id="ref"></canvas></div>
+<script>
+const SLOTS = [
+  {key:'circ1',n:3,color:0xff5555,label:'Circ 1'}, {key:'circ2',n:3,color:0xffaa33,label:'Circ 2'},
+  {key:'circ3',n:3,color:0xeedd33,label:'Circ 3'}, {key:'circ4',n:3,color:0x66dd55,label:'Circ 4'},
+  {key:'width1',n:2,color:0x44ccee,label:'Width 1'}, {key:'width2',n:2,color:0x6688ff,label:'Width 2'},
+  {key:'length1',n:2,color:0xcc66ff,label:'Length 1'}];
+const hex = c => '#' + c.toString(16).padStart(6, '0');
+const b64 = (s, T) => { const bin = atob(s), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new T(u.buffer); };
+const sub = (a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const norm=a=>{const l=Math.hypot(...a)||1;return a.map(x=>x/l)};
+
+// ---- slicing (same rule as measure_fixed.py: a vertex is "+" iff d >= 0) --------------------------------------
+function slice(V, F, o, n) {
+  const nv = V.length / 3, d = new Float64Array(nv);
+  for (let i = 0; i < nv; i++) d[i] = (V[3*i]-o[0])*n[0] + (V[3*i+1]-o[1])*n[1] + (V[3*i+2]-o[2])*n[2];
+  const edge = new Map(), pts = [], segs = [];
+  const ep = (a, b) => { const k = a < b ? a*nv+b : b*nv+a; let id = edge.get(k);
+    if (id === undefined) { const t = d[a]/(d[a]-d[b]); id = pts.length; edge.set(k, id);
+      pts.push([V[3*a]+t*(V[3*b]-V[3*a]), V[3*a+1]+t*(V[3*b+1]-V[3*a+1]), V[3*a+2]+t*(V[3*b+2]-V[3*a+2])]); } return id; };
+  for (let f = 0; f < F.length; f += 3) {
+    const a = F[f], b = F[f+1], c = F[f+2], sa = d[a] >= 0, sb = d[b] >= 0, sc = d[c] >= 0;
+    if (sa === sb && sb === sc) continue;
+    const cut = [];
+    if (sa !== sb) cut.push(ep(a, b)); if (sb !== sc) cut.push(ep(b, c)); if (sc !== sa) cut.push(ep(c, a));
+    segs.push([cut[0], cut[1]]);
+  }
+  // loops: union-find over cut-edge ids
+  const par = pts.map((_, i) => i), find = i => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+  for (const [a, b] of segs) par[find(a)] = find(b);
+  return {pts, segs, comp: segs.map(s => find(s[0]))};
+}
+function nearestLoop(sl, c) {
+  let best = null, bd = 1e30;
+  for (let i = 0; i < sl.segs.length; i++) {
+    const p = sl.pts[sl.segs[i][0]], q = sl.pts[sl.segs[i][1]];
+    const m = [(p[0]+q[0])/2, (p[1]+q[1])/2, (p[2]+q[2])/2], dd = Math.hypot(...sub(m, c));
+    if (dd < bd) { bd = dd; best = sl.comp[i]; }
+  }
+  return sl.segs.map((_, i) => sl.comp[i] === best);
+}
+// ---- the annotation -> measurements, identical definitions to evaluate_wild.py ---------------------------------
+function planeOf(p) { const nrm = norm(cross(sub(p[1],p[0]), sub(p[2],p[0])));
+  return {n: nrm, c: [0,1,2].map(k => (p[0][k]+p[1][k]+p[2][k])/3)}; }
+function axisOf(A) {                       // mean of the plane normals, each sign-aligned to circ1's (as evaluate_wild.py)
+  let ref = null, ax = null;
+  for (const k of ['circ1','circ2','circ3','circ4']) { if (A[k].some(p => !p)) continue;
+    let n = planeOf(A[k]).n; if (!ref) { ref = n; ax = n.slice(); continue; }
+    if (dot(n, ref) < 0) n = n.map(x => -x); ax = ax.map((x,i) => x + n[i]); }
+  return ax ? norm(ax) : null; }
+
+class Viewer {
+  constructor(canvas, interactive) {
+    this.canvas = canvas; this.interactive = interactive;
+    this.r = new THREE.WebGLRenderer({canvas, antialias: true}); this.r.setClearColor(0x15171a);
+    this.s = new THREE.Scene(); this.cam = new THREE.PerspectiveCamera(40, 1, 0.1, 1e5);
+    this.s.add(new THREE.AmbientLight(0xffffff, 0.7)); const dl = new THREE.DirectionalLight(0xffffff, 0.6);
+    dl.position.set(1, 2, 3); this.s.add(dl);
+    this.ctl = new THREE.OrbitControls(this.cam, canvas); this.ctl.enableDamping = false;
+    this.overlay = new THREE.Group(); this.s.add(this.overlay); this.mesh = null; this.radius = 100;
+    this.opacity = 0.35; this.wire = false; this.psz = 1; this.showPlanes = true;
+    this.ctl.addEventListener('change', () => this.render());
+  }
+  setMesh(V, F, center) {                              // V Float32 (original frame), rendered centred
+    if (this.mesh) { this.s.remove(this.mesh); this.mesh.geometry.dispose(); }
+    this.V = V; this.F = F; this.center = center;
+    const P = new Float32Array(V.length);
+    for (let i = 0; i < V.length; i += 3) for (let k = 0; k < 3; k++) P[i+k] = V[i+k] - center[k];
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    g.setIndex(new THREE.BufferAttribute(F, 1)); g.computeVertexNormals(); g.computeBoundingSphere();
+    this.radius = g.boundingSphere.radius;
+    this.mat = new THREE.MeshPhongMaterial({color: 0xc9b8a8, transparent: true, opacity: this.opacity,
+      depthWrite: false, side: THREE.DoubleSide, wireframe: this.wire});
+    this.mesh = new THREE.Mesh(g, this.mat); this.s.add(this.mesh);
+    this.cam.position.set(this.radius*1.2, this.radius*0.8, this.radius*3.2); this.cam.near = this.radius/100;
+    this.cam.far = this.radius*50; this.cam.updateProjectionMatrix(); this.ctl.target.set(0,0,0); this.ctl.update();
+    this.render();
+  }
+  resize() { const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
+    this.r.setSize(w, h, false); this.cam.aspect = w/h; this.cam.updateProjectionMatrix(); this.render(); }
+  render() { this.r.render(this.s, this.cam); }
+  setStyle() { if (this.mat) { this.mat.opacity = this.opacity; this.mat.wireframe = this.wire; } this.render(); }
+  // draw an annotation: points (spheres), planes, slices, axis
+  draw(A, active) {
+    while (this.overlay.children.length) { const o = this.overlay.children.pop(); o.geometry && o.geometry.dispose(); }
+    this.handles = []; if (!this.V) return {};
+    const out = {}, R = this.radius, c = this.center, loc = p => new THREE.Vector3(p[0]-c[0], p[1]-c[1], p[2]-c[2]);
+    const ax = axisOf(A);
+    for (const S of SLOTS) {
+      const P = A[S.key]; const col = S.color;
+      P.forEach((p, i) => { if (!p) return;
+        const m = new THREE.Mesh(new THREE.SphereGeometry(R*0.012*this.psz*(active && active[0]===S.key && active[1]===i ? 1.6 : 1), 12, 8),
+          new THREE.MeshBasicMaterial({color: col, depthTest: false})); m.position.copy(loc(p)); m.renderOrder = 10;
+        m.userData = {key: S.key, idx: i}; this.overlay.add(m); this.handles.push(m); });
+      if (S.key.startsWith('circ') && P.every(p => p)) {
+        const pl = planeOf(P), sl = slice(this.V, this.F, pl.c, pl.n), sel = nearestLoop(sl, pl.c);
+        let L = 0; const arr = [];
+        sl.segs.forEach((s, i) => { if (!sel[i]) return; const a = sl.pts[s[0]], b = sl.pts[s[1]];
+          L += Math.hypot(...sub(a, b)); arr.push(...loc(a).toArray(), ...loc(b).toArray()); });
+        out[S.key] = L; if (this.showPlanes) this.addLines(arr, col);
+        if (this.showPlanes) { const pg = new THREE.Mesh(new THREE.PlaneGeometry(R*1.1, R*1.1),
+          new THREE.MeshBasicMaterial({color: col, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false}));
+          pg.position.copy(loc(pl.c)); pg.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(...pl.n));
+          this.overlay.add(pg); }
+      }
+      if (S.key.startsWith('width') && P.every(p => p) && ax) {
+        const mid = [0,1,2].map(k => (P[0][k]+P[1][k])/2);
+        let d = sub(P[0], P[1]); d = norm(d.map((x, i) => x - dot(d, ax)*ax[i]));
+        const sl = slice(this.V, this.F, mid, ax), sel = nearestLoop(sl, mid);
+        let lo = 1e30, hi = -1e30; const arr = [];
+        sl.segs.forEach((s, i) => { if (!sel[i]) return; const a = sl.pts[s[0]], b = sl.pts[s[1]];
+          for (const q of [a, b]) { const v = dot(q, d); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+          arr.push(...loc(a).toArray(), ...loc(b).toArray()); });
+        out[S.key] = hi - lo; if (this.showPlanes) this.addLines(arr, col);
+        this.addLines([...loc(P[0]).toArray(), ...loc(P[1]).toArray()], col);
+      }
+      if (S.key === 'length1' && P.every(p => p)) {
+        this.addLines([...loc(P[0]).toArray(), ...loc(P[1]).toArray()], col);
+        if (ax) out[S.key] = Math.abs(dot(sub(P[0], P[1]), ax));
+      }
+    }
+    this.render(); return out;
+  }
+  addLines(arr, col) { if (!arr.length) return;
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({color: col, depthTest: false})); l.renderOrder = 9;
+    this.overlay.add(l); }
+  pick(ev, far) {                                                      // surface point under the mouse (original frame)
+    if (!this.mesh) return null;
+    const r = this.canvas.getBoundingClientRect(), m = new THREE.Vector2(
+      ((ev.clientX - r.left)/r.width)*2 - 1, -((ev.clientY - r.top)/r.height)*2 + 1);
+    const rc = new THREE.Raycaster(); rc.setFromCamera(m, this.cam);
+    const hit = rc.intersectObject(this.mesh, false); if (!hit.length) return null;
+    const h = far ? hit[hit.length-1] : hit[0];
+    return [h.point.x + this.center[0], h.point.y + this.center[1], h.point.z + this.center[2]];
+  }
+  hitHandle(ev) { const r = this.canvas.getBoundingClientRect(), m = new THREE.Vector2(
+      ((ev.clientX - r.left)/r.width)*2 - 1, -((ev.clientY - r.top)/r.height)*2 + 1);
+    const rc = new THREE.Raycaster(); rc.setFromCamera(m, this.cam);
+    const h = rc.intersectObjects(this.handles || [], false); return h.length ? h[0].object.userData : null; }
+}
+
+// ---------------------------------------------------------------------------------------- app
+const main = new Viewer(document.getElementById('c'), true);
+const refv = new Viewer(document.getElementById('ref'), false);
+let names = [], cur = -1, A = null, active = ['circ1', 0], drag = null, dirty = false;
+const msg = t => document.getElementById('msg').textContent = t || '';
+const emptyAnn = () => { const a = {}; SLOTS.forEach(s => a[s.key] = Array(s.n).fill(null)); return a; };
+
+function fromJSON(j) { const a = emptyAnn(); if (!j || !j.planes) return a;
+  for (const k of ['circ1','circ2','circ3','circ4']) if (j.planes[k]) a[k] = j.planes[k];
+  for (const k of ['width1','width2']) if (j.widths && j.widths[k]) a[k] = j.widths[k];
+  if (j.length1) a.length1 = j.length1; return a; }
+function toJSON() { const o = {version: 2, planes: {}, widths: {}, length1: A.length1};
+  for (const k of ['circ1','circ2','circ3','circ4']) o.planes[k] = A[k];
+  for (const k of ['width1','width2']) o.widths[k] = A[k];
+  if (!SLOTS.every(s => A[s.key].every(p => p))) return null; return o; }
+
+function buildUI() {
+  const el = document.getElementById('slots'); el.innerHTML = '';
+  SLOTS.forEach(S => { const d = document.createElement('div'); d.className = 'slot' + (active[0]===S.key ? ' active' : '');
+    d.style.borderColor = hex(S.color);
+    d.innerHTML = `${S.label} <span class="val" id="v_${S.key}"></span><br>` +
+      A[S.key].map((p, i) => `<span class="pt ${p?'set':''}" data-i="${i}" style="background:${p?hex(S.color):'transparent'};` +
+      `${active[0]===S.key && active[1]===i ? 'outline:2px solid #fff' : ''}"></span>`).join('');
+    d.onclick = e => { const i = e.target.dataset.i; active = [S.key, i !== undefined ? +i : A[S.key].findIndex(p => !p) < 0 ? 0 : A[S.key].findIndex(p => !p)];
+      refresh(); };
+    el.appendChild(d); });
+}
+function refresh() { buildUI(); const v = main.draw(A, active);
+  SLOTS.forEach(S => { const e = document.getElementById('v_' + S.key); if (e) e.textContent = v[S.key] !== undefined ? v[S.key].toFixed(1) + ' mm' : ''; });
+  document.getElementById('readout').innerHTML = SLOTS.map(S => `${S.label}: <b>${v[S.key] !== undefined ? v[S.key].toFixed(2) + ' mm' : '-'}</b>`).join('<br>');
+}
+function advance() { const S = SLOTS.findIndex(s => s.key === active[0]);
+  for (let o = 0; o < SLOTS.length; o++) { const s = SLOTS[(S+o) % SLOTS.length], i = A[s.key].findIndex(p => !p);
+    if (i >= 0) { active = [s.key, i]; return; } } }
+function place(p) { A[active[0]][active[1]] = p; dirty = true; advance(); refresh(); }
+
+async function loadMesh(i) {
+  if (dirty && !confirm('Unsaved changes will be lost. Continue?')) { document.getElementById('meshSel').value = cur; return; }
+  cur = i; document.getElementById('meshSel').value = i; msg('loading ' + names[i] + ' ...');
+  const m = await (await fetch('/api/mesh?name=' + encodeURIComponent(names[i]))).json();
+  const V = b64(m.v, Float32Array), F = b64(m.f, Uint32Array);
+  main.setMesh(V, F, m.center);
+  A = fromJSON(await (await fetch('/api/ann?name=' + encodeURIComponent(names[i]))).json());
+  active = ['circ1', 0]; advance(); dirty = false; refresh(); msg('');
+}
+async function save() { const j = toJSON(); if (!j) { msg('incomplete: place all 18 points first'); return; }
+  const r = await fetch('/api/ann?name=' + encodeURIComponent(names[cur]), {method:'POST', body: JSON.stringify(j)});
+  dirty = false; msg(r.ok ? 'saved ' + names[cur] : 'save failed'); }
+
+// pointer handling: click = place, drag handle = move, otherwise orbit
+let down = null;
+main.canvas.addEventListener('pointerdown', e => { if (e.button !== 0) return;
+  const h = main.hitHandle(e); down = {x: e.clientX, y: e.clientY, h};
+  if (h) { drag = h; main.ctl.enabled = false; active = [h.key, h.idx]; refresh(); } });
+main.canvas.addEventListener('pointermove', e => { if (!drag) return;
+  const p = main.pick(e, e.shiftKey); if (!p) return; A[drag.key][drag.idx] = p; dirty = true;
+  if (!main._raf) main._raf = requestAnimationFrame(() => { main._raf = 0; refresh(); }); });
+window.addEventListener('pointerup', e => { if (e.button !== 0 && e.button !== undefined) return;
+  main.ctl.enabled = true;
+  if (drag) { drag = null; refresh(); }
+  else if (down && !down.h && Math.hypot(e.clientX-down.x, e.clientY-down.y) < 4 && e.target === main.canvas) {
+    const p = main.pick(e, e.shiftKey); if (p) place(p); else msg('no surface under the cursor'); }
+  down = null; });
+window.addEventListener('keydown', e => {
+  if (e.key === 'Backspace' || e.key === 'Delete') { A[active[0]][active[1]] = null; dirty = true; refresh(); }
+  else if (e.key === 's' || e.key === 'S') { e.preventDefault(); save(); }
+  else if (e.key === 'n' || e.key === 'N') { if (cur + 1 < names.length) loadMesh(cur + 1); }
+  else if (e.key === 'p' || e.key === 'P') { if (cur > 0) loadMesh(cur - 1); } });
+document.getElementById('save').onclick = save;
+document.getElementById('clear').onclick = () => { A = emptyAnn(); active = ['circ1', 0]; dirty = true; refresh(); };
+document.getElementById('next').onclick = () => cur + 1 < names.length && loadMesh(cur + 1);
+document.getElementById('prev').onclick = () => cur > 0 && loadMesh(cur - 1);
+document.getElementById('meshSel').onchange = e => loadMesh(+e.target.value);
+const sty = () => { main.opacity = refv.opacity = +document.getElementById('opa').value;
+  main.wire = document.getElementById('wire').checked; main.psz = +document.getElementById('psz').value;
+  main.showPlanes = document.getElementById('planes').checked; main.setStyle(); if (A) refresh(); };
+['opa','wire','psz','planes'].forEach(id => document.getElementById(id).oninput = sty);
+document.getElementById('refShow').onchange = e => refv.canvas.style.display = e.target.checked ? 'block' : 'none';
+window.addEventListener('resize', () => { main.resize(); refv.resize(); });
+
+(async () => {
+  main.resize(); refv.resize();
+  const r = await (await fetch('/api/ref')).json();
+  refv.setMesh(b64(r.v, Float32Array), b64(r.f, Uint32Array), r.center);
+  refv.opacity = 0.35; refv.setStyle(); refv.draw(fromJSON(r.ann), null);
+  const list = await (await fetch('/api/list')).json(); names = list.map(x => x.name);
+  const sel = document.getElementById('meshSel');
+  list.forEach((x, i) => { const o = document.createElement('option'); o.value = i;
+    o.textContent = (x.annotated ? '✓ ' : '   ') + x.name; sel.appendChild(o); });
+  if (names.length) { const first = list.findIndex(x => !x.annotated); await loadMesh(first < 0 ? 0 : first); }
+  else msg('no meshes found');
+})();
+</script></body></html>

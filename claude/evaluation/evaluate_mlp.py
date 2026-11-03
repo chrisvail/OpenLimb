@@ -1,6 +1,6 @@
 """Evaluate the plain-MLP regression baseline with the SAME protocol as evaluate.py, and compare with the CVAE.
 
-    python claude/evaluate_mlp.py ckpt=<mlp best.ckpt> cvae_ckpt=<cvae best.ckpt> cvae_eval=<cvae eval dir>
+    python claude/evaluation/evaluate_mlp.py ckpt=<mlp best.ckpt> cvae_ckpt=<cvae best.ckpt> cvae_eval=<cvae eval dir>
 
 * Test limbs: the 1024 limbs of the original docker generator (same seed as evaluate.py => identical limbs).
 * Every mesh / measurement of a generated limb comes from the ORIGINAL SSM_Driver code.
@@ -12,8 +12,8 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from openlimb_cvae.common import register_resolvers, setup_env  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import register_resolvers, setup_env  # noqa: E402
 
 setup_env()
 register_resolvers()
@@ -30,8 +30,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 from evaluate import (in_box_u, load_reference, orig_measures, orig_verts,  # noqa: E402
                       original_test_limbs, shape_metrics)
-from openlimb_cvae.lit_cvae import LimbCVAE  # noqa: E402
-from openlimb_cvae.lit_mlp import LimbMLP  # noqa: E402
+from models.lit_cvae import LimbCVAE  # noqa: E402
+from models.lit_mlp import LimbMLP  # noqa: E402
 
 REPORT = []
 
@@ -63,7 +63,7 @@ def timeit(fn, reps):
     return 1000 * float(np.median(t))
 
 
-@hydra.main(config_path="conf", config_name="evaluate_mlp", version_base="1.3")
+@hydra.main(config_path="../conf", config_name="evaluate_mlp", version_base="1.3")
 def main(cfg: DictConfig):
     torch.manual_seed(cfg.seed)
     out = Path(HydraConfig.get().runtime.output_dir)

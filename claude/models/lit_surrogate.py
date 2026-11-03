@@ -2,7 +2,7 @@ import lightning as L
 import torch
 import torch.nn.functional as F
 
-from .geometry import load_transforms
+from data.geometry import load_transforms
 from .networks import MeasurementSurrogate
 
 

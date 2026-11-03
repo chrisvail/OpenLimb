@@ -1,8 +1,8 @@
 """Evaluate the gradient-free (GA) route with the SAME protocol and test limbs as evaluate.py / evaluate_mlp.py.
 
-    python claude/evaluate_ga.py
+    python claude/evaluation/evaluate_ga.py
 
-Methods (openlimb_cvae/ga.py):
+Methods (ga.py):
 * GA (notebook)             - genetic_alg.ipynb's pygad set-up, unchanged: what GA_results*.csv contain
 * GA (notebook) + LM fixed  - plus the notebook's Levenberg-Marquardt refinement with its faults fixed
 * GA (improved)             - same library, objective and budget; plausible-box genes, shrinking Gaussian mutation
@@ -19,8 +19,8 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from openlimb_cvae.common import register_resolvers, setup_env  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import register_resolvers, setup_env  # noqa: E402
 
 setup_env()
 register_resolvers()
@@ -38,10 +38,10 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 from evaluate import load_reference, orig_measures, orig_verts, original_test_limbs, shape_metrics  # noqa: E402
 from evaluate_mlp import stats  # noqa: E402
-from openlimb_cvae import ga  # noqa: E402
-from openlimb_cvae.fast_measure import BoxMap  # noqa: E402
-from openlimb_cvae.geometry import load_transforms  # noqa: E402
-from openlimb_cvae.lit_cvae import LimbCVAE  # noqa: E402
+from models import ga  # noqa: E402
+from data.fast_measure import BoxMap  # noqa: E402
+from data.geometry import load_transforms  # noqa: E402
+from models.lit_cvae import LimbCVAE  # noqa: E402
 
 REPORT = []
 
@@ -78,7 +78,7 @@ def time_notebook_original(ref, true_c, true_m, seed):
     return time.perf_counter() - t
 
 
-@hydra.main(config_path="conf", config_name="evaluate_ga", version_base="1.3")
+@hydra.main(config_path="../conf", config_name="evaluate_ga", version_base="1.3")
 def main(cfg: DictConfig):
     out = Path(HydraConfig.get().runtime.output_dir)
     ref, names = load_reference()

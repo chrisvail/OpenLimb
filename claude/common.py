@@ -4,7 +4,7 @@ from pathlib import Path
 import torch
 from omegaconf import OmegaConf
 
-CLAUDE_DIR = Path(__file__).resolve().parents[1]
+CLAUDE_DIR = Path(__file__).resolve().parent
 
 
 def register_resolvers():
@@ -17,7 +17,7 @@ def surrogate_path(scale, override=None):
 
 
 def setup_env():
-    """Make `openlimb_cvae` and the repo root (SSM_Driver, measure_limbs) importable."""
+    """Make `data`, `models` and the repo root (SSM_Driver, measure_limbs) importable."""
     for p in (CLAUDE_DIR, CLAUDE_DIR.parent):
         if str(p) not in sys.path:
             sys.path.insert(0, str(p))

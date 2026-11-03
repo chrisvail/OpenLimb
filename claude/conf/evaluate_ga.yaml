@@ -1,6 +1,6 @@
-cvae_ckpt: claude/outputs/single/2026-09-29_15-42-26/checkpoints/best.ckpt   # final CVAE (families + timing)
-cvae_eval: claude/outputs/eval/wplaus200    # its evaluate.py output (eval_data.npz) - same 1024 test limbs
-mlp_eval: claude/outputs/eval/mlp           # evaluate_mlp.py output (compare.json)
+cvae_ckpt: claude/outputs/single/fx_w200/checkpoints/best.ckpt   # final CVAE (families + timing)
+cvae_eval: claude/outputs/eval/fx_w200    # its evaluate.py output (eval_data.npz) - same 1024 test limbs
+mlp_eval: claude/outputs/eval/fx_mlp           # evaluate_mlp.py output (compare.json)
 n_limbs: 1024
 n_requests: null                            # optimise only the first n (smoke test); null = all
 seed: 777                                   # must equal evaluate.py's seed => identical test limbs
@@ -19,7 +19,7 @@ ga_improved:                                # chosen on 48 development limbs (no
   sigma0: 0.3
   sigma1: 0.03
 fig_dir: claude/report/figs
-out_dir: ${claude_dir:}/outputs/eval/ga
+out_dir: ${claude_dir:}/outputs/eval/fx_ga
 
 hydra:
   job:

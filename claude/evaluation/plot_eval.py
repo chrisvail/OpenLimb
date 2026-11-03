@@ -1,7 +1,7 @@
 """Figures for the evaluation produced by evaluate.py.
 
-    python claude/plot_eval.py <eval_dir> --out claude/report/figs
-    python claude/plot_eval.py <eval_dir> --out claude/report/figs --compare "w_plaus=1@<dir>" "w_plaus=10@<dir>"
+    python claude/evaluation/plot_eval.py <eval_dir> --out claude/report/figs
+    python claude/evaluation/plot_eval.py <eval_dir> --out claude/report/figs --compare "w_plaus=1@<dir>" "w_plaus=10@<dir>"
 """
 import argparse
 from pathlib import Path

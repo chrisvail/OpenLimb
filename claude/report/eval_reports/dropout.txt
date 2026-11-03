@@ -1,0 +1,38 @@
+checkpoint: claude/outputs/dropout/full/checkpoints/best.ckpt
+z_dim=4  p_full=0.2  min_keep=0  w_plaus=200.0
+1024 held-out limbs x 4 prior samples per pattern; errors in mm of the exact measurement
+
+=== A. All measurements, and each measurement dropped in turn ===
+pattern                obs MAE  miss MAE  outside  vert RMSE  family std
+---------------------  -------  --------  -------  ---------  ----------
+all 7                    0.643         -     4.4%       5.53        3.02
+all 7 (baseline CVAE)    0.441         -     1.4%       5.28        2.83
+drop Circumference 1     0.697     3.457     3.7%       6.24        3.65
+drop Circumference 2     0.688     2.077     3.7%       6.05        3.23
+drop Circumference 3     0.665     2.213     3.0%       5.73        3.19
+drop Circumference 4     0.684     5.360     2.8%       5.73        3.06
+drop Length 1            0.747    11.479     3.2%       8.15        4.01
+drop Width 1             0.796     2.112     3.6%       6.11        3.15
+drop Width 2             0.790     2.399     3.8%       5.85        3.19
+
+=== B. k observed measurements (random subsets, 8 masks per limb) ===
+pattern  obs MAE  miss MAE  outside  vert RMSE  family std
+-------  -------  --------  -------  ---------  ----------
+k=6        0.724     4.160     3.6%       6.32        3.38
+k=5        0.785     4.988     2.3%       7.17        3.75
+k=4        0.842     6.140     1.7%       8.14        4.26
+k=3        0.922     8.009     1.4%       9.69        4.94
+k=2        0.995    11.012     1.1%      12.25        5.88
+k=1        0.874    17.537     0.5%      15.84        7.25
+k=0            -    33.399     0.0%      18.92        8.88
+
+=== C. MAE (mm) of each measurement: when observed (all 7) vs when it alone is dropped ===
+measure          observed  dropped
+---------------  --------  -------
+Circumference 1     0.749    3.457
+Circumference 2     0.795    2.077
+Circumference 3     0.820    2.213
+Circumference 4     0.891    5.360
+Length 1            0.599   11.479
+Width 1             0.330    2.112
+Width 2             0.316    2.399

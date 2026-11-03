@@ -1,69 +1,92 @@
-# Generating residual-limb shapes from clinical measurements
+# Generating residual-limb shapes from clinical measurements: the complete guide
 
-**In one sentence:** I trained a neural network that takes the seven tape and caliper measurements a clinician records and generates many different, plausible 3-D residual-limb shapes. Every one of those shapes has the requested measurements.
+*Status: 2026-11-02. All numbers in this document were produced with the corrected measurement code (§2) by models trained under it. To reproduce any of them see [`../README.md`](../README.md).*
 
----
+**In one sentence:** a neural network takes the seven tape and caliper measurements a clinician records and generates as many different, plausible 3-D residual-limb shapes as you like, every one of which has the requested measurements.
 
-## 1. Summary of findings
-
-1. **Generated limbs have the requested measurements.** The mean error is 0.37 mm (0.17 %). Only 0.1 % of generated limbs have any measurement more than 5 mm off.
-2. **This is about 2× more accurate than a plain MLP regressor of identical architecture trained on the same data** (0.37 vs 0.72 mm on the same 1024 test limbs), and 4× more accurate than the genetic algorithm (GA) as configured in the notebook (1.54 mm). **Repaired optimisation is more accurate than the CVAE, however:** Gauss–Newton constrained to OpenLimbTT's plausible region matches the measurements essentially exactly (mean 0.0001 mm), with every limb plausible, in about 0.1 s per limb (§8.3). The CVAE's advantages over it are speed (0.6 ms for 64 limbs, against ~7 s) and a learnt family. The plain MLP is as fast as the CVAE but returns only one limb per request.
-3. **The same measurements produce genuinely different shapes.** A typical family member differs from the family average by 5.4 mm per vertex, while its measurements move by less than 0.5 mm.
-4. **98 % of generated limbs are plausible**, meaning OpenLimbTT's own generator could have produced them.
-5. **Seven measurements pin down about 95 % of OpenLimbTT's shape variation.** The families represent the remaining 5 %.
-6. **The main limit on accuracy is the fast approximate measurement network (the "surrogate") used during training, not the generator itself.**
-
-All results are on synthetic OpenLimbTT limbs. Real clinical measurements have not been tested yet (§10).
+**How to read this.** §1 is the one-page summary. §2–§5 explain *what the code does* (measurements, shape model, networks, training). §6 is how it is evaluated and §7 the results. §8 covers the two experiments for real data (3-D scans with annotation, and CSV tables of measurements). §9 points to the reproduction commands, §10 is the file map and conventions you need to know to modify anything, §11 the limitations.
 
 ---
 
-## 2. The problem
+## 1. Summary
 
-### 2.1 What we want
-Prosthetics research is short of residual-limb shape data. 3-D scans are rare, expensive and identifying. Clinics, however, routinely record a handful of simple measurements. If those measurements can be turned into realistic 3-D shapes, existing clinical records become a source of shape data.
+1. **Generated limbs have the requested measurements.** Mean error 0.43 mm (0.19 %) over 8192 random-code limbs, judged by the exact measurement code on 1024 limbs from OpenLimbTT's own generator. 0.17 % of limbs have any measurement more than 5 mm off.
+2. **The same measurements give genuinely different shapes.** A family member sits 5.4 mm (per vertex) from its family's average while its measurements move by about 0.5 mm. Seven measurements fix about 95 % of OpenLimbTT's shape variance; the families represent the remaining 5 %.
+3. **98.4 % of generated limbs are plausible** (inside the region OpenLimbTT's generator can reach).
+4. **Against alternatives** (same 1024 test limbs):
 
-### 2.2 The shape model we generate from
-**OpenLimbTT** is a published statistical shape model of transtibial residual limbs. It was built from 33 MRI/CT scans (29 male, 4 female) from the UK, Australia and the US. It describes any limb with **11 numbers**:
-- **10 shape-mode scores.** Each is a weight on one principal direction of variation. For example, one mode might make the limb more bulbous or more conical.
-- **1 size number:** the length of the intact tibia (342.8–439.8 mm), which scales the whole limb.
+   | | mean error | answers per request | time per request |
+   |---|---|---|---|
+   | **CVAE** (this work) | 0.43 mm | any number | 0.3 ms (1 limb), 0.9 ms (64) |
+   | plain MLP, same architecture | 0.81 mm | 1 | 0.3 ms |
+   | GA as in the notebook | 1.56 mm | 1 | 46 s as written, 1.4 s fast measure |
+   | improved GA | 0.56 mm | 1 | 1.2 s |
+   | Gauss–Newton in the plausible box | 0.00007 mm | 1 (or a family from random starts) | 0.11 s |
 
-Given these 11 numbers, OpenLimbTT builds a full surface mesh (7732 vertices).
-
-OpenLimbTT also has its own random-limb generator. It draws 10 "skin-only" mode scores uniformly between the minimum and maximum values seen in its 33 training scans, then converts them to the 11 numbers with a fixed linear regression. The OpenLimbTT authors built it this way because unconstrained combinations of modes can give anatomically impossible limbs. I call the region the generator can reach the **plausible box**. A limb is "plausible" if the generator could have produced it.
-
-### 2.3 The seven measurements
-All seven are computed from the mesh by the original `SSM_Driver.py` code:
-- **Circumferences 1–4:** perimeter of the limb cut by a horizontal plane at four landmark heights, from proximal (1) to distal (4).
-- **Length 1:** vertical distance between two landmark vertices, the knee region and the distal end.
-- **Widths 1 and 2:** medio-lateral width across the knee at two heights.
-
-### 2.4 Why a single answer is the wrong answer
-Seven measurements cannot fix eleven numbers, so about four degrees of freedom remain. Many different limbs share exactly the same measurements. Asking "which limb has these measurements?" therefore has many correct answers.
-
-This explains why the earlier approaches struggled:
-- **NN regression** is trained to minimise average error, so it learns to output the *average* of all limbs that share the measurements. Circumference is a nonlinear function of shape, so the average of several limbs with circumference 300 mm does not in general have circumference 300 mm. In practice this effect is small: a plain MLP of the same architecture as the CVAE, trained on the same data, misses the measurements by 0.72 mm on average (0.31 %), with a slight bias towards *smaller* circumferences (§8.3). The bigger limitation of regression is that it returns a single limb.
-- **The GA** searches the 11 numbers from scratch for every request. It has a limited budget (50 generations × 32 candidates) and no plausibility constraint. It is slow, and it still returns only one of the many valid answers. §8.3 shows that its accuracy was limited mainly by its configuration: optimisation constrained to the plausible region can match the measurements exactly.
-
-What we want instead is a model that returns a **family**: as many different limbs as we ask for, all with the requested measurements, all plausible.
+   The CVAE is about 2× more accurate than the MLP. Optimisation with the exact measurement code is *more* accurate than the CVAE; the CVAE's advantages are speed (~400× per limb, ~10 000× per 64-limb family) and a learnt family.
+5. **A measurement bug was found and fixed** (§2.3): the original code made every circumference 4–11 mm (mean 8 mm, 2.4 %) too short. Everything in `claude/` now uses the corrected rule. This changes any number or checkpoint produced before 2026-10-14.
+6. **Real-data tooling exists and works on synthetic stand-ins** (§8): a 3-D annotation tool + mesh-vs-ground-truth experiment (`evaluate_wild.py`) and a CSV measurement-consistency experiment (`evaluate_csv.py`). **No real clinical data has been run through them yet.** Scan noise matters a lot (§8.1.6).
+7. **Measurements can be missing** (§4.7, §7.11): one network trained with random measurement dropout answers any subset of the 7. With all seven given it is slightly worse than the standard CVAE (0.64 vs 0.44 mm; 4.4 % vs 1.4 % implausible); each missing measurement is inferred to 2–5 mm, except Length 1 (11 mm).
 
 ---
 
-## 3. The model: a conditional variational autoencoder (CVAE)
+## 2. The measurements
 
-### 3.1 The idea in plain terms
-The generator is a neural network with two inputs:
-1. **The requested measurements** (7 numbers).
-2. **A random "code"** of 4 numbers, drawn from a standard normal distribution. The code chooses *which* of the many valid limbs to produce.
+### 2.1 Definitions
+Seven numbers, in this order everywhere in the code (the model's input order, the CSV column order in the reports, `MEAS_NAMES`):
 
-It outputs the 11 OpenLimbTT numbers. Asking for 64 limbs with the same measurements means running the generator 64 times with 64 different random codes.
+| # | name | definition (as implemented in `SSM_Driver.get_measurement_details`) |
+|---|---|---|
+| 0–3 | Circ 1–4 | perimeter of the limb cut by a plane through landmark vertex 4/5/6/7 (proximal → distal) |
+| 4 | Length 1 | \|z(vertex 0) − z(vertex 1)\|, along the limb axis |
+| 5–6 | Width 1–2 | extent along x of the cut at the plane through landmark vertex 2 / 3 |
 
-Four code numbers are used because that is how many degrees of freedom the measurements leave free (11 − 7 = 4).
+In the SSM's own frame the limb axis is z and the width direction x; all planes are horizontal. Units are mm (when `data.scale=true`, the default; the model then also outputs the tibia length so limbs are in real size). The diagram is `measurement_details/image002.png`.
 
-### 3.2 How the code is learnt
-The problem is teaching the generator what the code should mean. A CVAE does this with a second network, the **encoder**, which is used only during training:
-- The encoder is shown a real training limb *and* its measurements. It outputs the 4-number code that describes "what is special about this limb beyond its measurements".
-- The generator (also called the **decoder**) must rebuild the limb from the measurements plus that code.
-- A penalty called the **KL term** pushes the encoder's codes to be spread like a standard normal distribution (mean 0, std 1). This is what later lets us replace the encoder with plain random numbers.
+### 2.2 Why it matters how they are measured
+The CVAE is trained to hit these numbers, so *what the number means* is part of the model. A scan or a tape measure must give the same quantity as the training code, or the model is fed systematically wrong inputs.
+
+### 2.3 The `0 < t < 1` bug and its fix
+`measure_limbs.py` decides an edge is cut by the plane iff its intersection parameter satisfies `0 < t < 1`. Every OpenLimb plane is pinned **exactly through a mesh vertex**, so:
+- the edges leaving that vertex have `t = 0` and are not counted, and the triangles touching it lose their segment of the loop (a gap of 2–4 triangle widths);
+- any edge lying *in* the plane gives `0/0 = nan` and is discounted too;
+- widths additionally take their minimum together with x = 0 (`values *= t_mask` before max − min), so a slice not straddling x = 0 is measured from the origin (effect ≤ 0.1 mm on generated limbs).
+
+**Effect** (300 random OpenLimbTT limbs, corrected minus original): Circ 1–4 longer by +8.6, +7.4, +6.5, +6.7 mm on average (min +4.2, max +11.5; every limb), Length unchanged, Widths +0.006 / +0.002 mm on average (max 0.1).
+
+**Fix** (`data/measure_fixed.py`): a vertex belongs to the "+" side iff its signed distance to the plane is ≥ 0 (a symbolic nudge of the plane by +ε); an edge is cut iff its end points are on different sides. Every triangle then has 0 or 2 cut edges whatever the degeneracy, so the polyline is closed, continuous in the vertices, and equals the exact planar perimeter. Coplanar edges and faces are handled consistently. Widths take the true extent of the cut.
+
+**Where it applies.** `SSMGeometry` (and everything built on it: training data, the surrogate's targets, `generate.py`, all evaluation scripts), `FastMeasure` (same numbers to 1e-13 mm), `evaluate.py`'s reference measurements, and the mesh measurement in `evaluate_wild.py`. `SSM_Driver.py` and `measure_limbs.py` in the repository root are **unchanged** (this work stays inside `claude/`); do not use them for measurements you intend to compare with this model's.
+
+**Consequences you must know about.**
+- Checkpoints and `data/surrogate_scaled.pt` produced before the fix are incompatible: they learnt the short circumferences. Retrain both. The surrogate lives at `claude/data/surrogate_scaled.pt`; current checkpoints are `claude/outputs/single/fx_*` (§10).
+- The normalisation constants in `data_components/*_measurement_transforms.pt` were computed from the old measurements. They are only means/standard deviations used to standardise inputs; I left them (the circumference means are ~2 % off, which has no practical effect).
+- Real data: tape-measure circumferences are true perimeters, i.e. consistent with the corrected rule.
+
+---
+
+## 3. The problem and the shape model
+
+**Why.** Prosthetics research is short of residual-limb shape data. 3-D scans are rare, expensive and identifying; clinics, however, routinely record a handful of measurements. If measurements can be turned into realistic shapes, clinical records become a source of shape data.
+
+**OpenLimbTT** is a published statistical shape model of transtibial residual limbs, built from 33 MRI/CT scans (29 male, 4 female; UK, Australia, USA). A limb is **11 numbers**: 10 shape-mode scores (weights on principal directions of variation) and 1 size number (intact tibia length, 342.8–439.8 mm). From them it builds a mesh of 7732 vertices (15 328 triangles), always the same vertices in the same order. The mesh is the skin surface with the bones removed (`vert_mapping.pt`, `face2vert.pt` in `data_components/`).
+
+**OpenLimbTT's own generator** (`GenerateRandomLimbs.py`) draws 10 "skin-only" mode scores uniformly between the minimum and maximum seen in its 33 scans and maps them to the 11 numbers with a fixed linear regression (`LR.pkl`); tibia length is uniform. I call the reachable region the **plausible box**; a limb is "plausible" if the generator could have produced it. The regression coefficients are extracted to `data/lr_map.npz` so any limb can be mapped back to box coordinates exactly (|u| ≤ 1 ⇔ inside).
+
+**Why one answer is the wrong answer.** Seven measurements cannot fix eleven numbers; about four degrees of freedom remain, so many different limbs share the same measurements.
+- **Regression** (NN, MLP) minimises average error, so it returns the *average* of all limbs sharing the measurements, and only one limb. Because circumference is a nonlinear function of shape the average does not in general keep the measurements; in practice this is small (§7.3).
+- **The GA** (`genetic_alg.ipynb`) searches the 11 numbers from scratch per request with a small budget and no plausibility constraint; it returns one answer (§7.3).
+
+What we want is a **family**: as many different limbs as asked for, all with the requested measurements, all plausible.
+
+---
+
+## 4. The model
+
+### 4.1 A conditional VAE
+The generator (decoder) is a network with two inputs: the 7 requested measurements and a 4-number random **code** z ~ N(0, I). It outputs the 11 limb numbers. 64 limbs for the same measurements = 64 different codes. Four code numbers because 11 − 7 = 4 degrees of freedom are left free (`z_dim`; 0 gives a deterministic regressor).
+
+Training uses a second network, the **encoder**, shown the true limb and its measurements; it outputs the code describing "what is special about this limb beyond its measurements". A **KL term** pushes the codes to be standard-normal-distributed, which is what later lets plain random numbers replace the encoder.
 
 ```
 TRAINING  (true limb known)
@@ -72,449 +95,458 @@ TRAINING  (true limb known)
    measurements ───────────────────────────────────┘
 
 USE       (only measurements known)
-   random codes ~ N(0, 1) ──┐
+   random codes ~ N(0, I) ──┐
                             ├──► decoder ──► family of limbs (all should have the requested measurements)
    measurements ────────────┘
 ```
+Terms used below: **random-code limb** (from a random code: normal use) and **encoded-code limb** (from the code the encoder assigns to a known limb: tests whether the decoder *could* represent that limb).
 
-Two terms are used throughout:
-- **Random-code limb:** generated from a random code. This is how the model is used in practice.
-- **Encoded-code limb:** generated from the code the encoder assigns to a known limb. This tests whether the decoder *could* represent that particular limb.
+### 4.2 What was added to a standard CVAE
+A standard CVAE only ever trains the decoder on encoder codes; nothing checks random codes. In first experiments 20 % of random-code limbs were outside the plausible box. Two losses therefore run the decoder on **random codes** at every step:
+- **random-code measurement loss:** the generated limb must have the requested measurements (no true limb exists, so this is the only supervision; it is what makes *every* family member honour the input);
+- **plausibility loss:** zero inside the box, squared distance outside (using the exact box test above).
 
-### 3.3 What I added to a standard CVAE, and why
-A standard CVAE only ever trains the decoder on codes from the encoder. Nothing directly checks that *random* codes give valid limbs. In my first experiments, 20 % of random-code limbs fell outside the plausible box. I therefore added two losses that run the decoder on **random codes** at every training step:
-- **Random-code measurement loss:** the generated limb must have the requested measurements. No true limb exists for a random code, so this is the only possible supervision, and it is what makes *every* family member satisfy the measurements.
-- **Plausibility loss:** zero if the limb is inside the plausible box, otherwise it grows with the squared distance outside. I built this by extracting the linear regression from OpenLimbTT's generator and inverting it, which gives an exact test for any limb.
+### 4.3 Architecture
+Encoder and decoder are residual MLPs: input layer → 256 units, 4 residual blocks (LayerNorm → SiLU → 256×256 linear, added to the input), output layer. Decoder input: 7 measurements + 4-number code. Encoder input: 7 measurements + 11 limb numbers; output: mean and spread of each code number. Everything is standardised (training mean/std; constants in `data_components/`).
 
-### 3.4 Network architecture
-Encoder and decoder are both residual multilayer perceptrons (MLPs):
-- an input layer mapping to 256 units,
-- then 4 residual blocks (layer normalisation → SiLU activation → 256×256 linear layer, added back to the block's input),
-- then an output layer.
+### 4.4 The surrogate
+The random-code measurement loss needs the gradient of the measurement with respect to the 11 limb numbers, for 512 limbs per step. The exact code is slow (≈4.5 ms per limb in a batch) and piecewise (a plane cutting a mesh has no useful gradient). The **surrogate** is a small separate network (same residual MLP design, width 256, 3 blocks) mapping the 11 numbers to the 7 measurements; fast, smooth, trained once on freshly exact-measured limbs (40 epochs × 30 batches × 256 = 307 200 limbs, MSE on standardised measurements, AdamW, one-cycle LR peaking at 2×10⁻³) and then frozen.
 
-The decoder receives the 7 measurements and the 4-number code. The encoder receives the 7 measurements and the 11 limb numbers, and outputs a mean and a spread for each of the 4 code numbers. All inputs and outputs are **standardised**: each quantity has its training mean subtracted and is divided by its standard deviation, so all numbers are on a similar scale.
-
----
-
-## 4. The surrogate: a fast stand-in for the measurement code
-
-### 4.1 Why it is needed
-To train the random-code measurement loss, every training step must measure every generated limb *and* know how to nudge the network to reduce the error. That requires the gradient of the measurement with respect to the 11 limb numbers. The original measurement code cannot do this well:
-- **It is slow:** about 4 ms per limb in a batch and 12 ms for a single limb, against 512 limbs per training step.
-- **It has no useful gradient,** because it intersects the mesh with planes, which is piecewise and discontinuous.
-
-### 4.2 What it is
-The surrogate is a separate small network (the same residual MLP design: width 256, 3 blocks). It takes the 11 limb numbers and predicts the 7 measurements. It is fast and smooth, so gradients flow through it. It is trained once, then frozen, and used only inside the CVAE's training loss.
-
-### 4.3 How it was trained
-- **Data:** 307 200 random OpenLimbTT limbs (40 epochs × 30 batches × 256), each measured with the **exact** original code. They were generated fresh during training, with 8 parallel workers to hide the measurement cost. No limb was seen twice.
-- **Loss:** mean squared error on standardised measurements.
-- **Optimiser:** AdamW with a one-cycle learning-rate schedule peaking at 2×10⁻³, weight decay 10⁻⁵.
-- A 2-epoch trial run was done first to check the pipeline; it reached 2.7 mm error and was discarded.
-
-### 4.4 How accurate it is
-On 1024 held-out limbs, compared with the exact code:
+On 1024 held-out limbs its error against the exact (corrected) code is:
 
 | | Circ 1 | Circ 2 | Circ 3 | Circ 4 | Len 1 | Wid 1 | Wid 2 | all |
 |---|---|---|---|---|---|---|---|---|
-| surrogate mean error (mm) | 0.39 | 0.39 | 0.38 | 0.42 | 0.27 | 0.19 | 0.19 | **0.32** |
+| surrogate mean error (mm) | 0.39 | 0.39 | 0.38 | 0.42 | 0.27 | 0.18 | 0.19 | **0.32** |
 
-### 4.5 A consequence worth knowing
-During CVAE training, the "requested measurements" for each training limb are also computed by the surrogate, not the exact code. This avoids exact measurement in the training loop entirely. The CVAE therefore learns to satisfy the *surrogate's* idea of the measurements, so any systematic surrogate error is inherited. §8.2 shows this is what limits final accuracy. **Every result in this report is measured with the exact original code; the surrogate is never used for evaluation.**
+During CVAE training the "requested measurements" of each training limb also come from the surrogate (avoiding exact measurement in the loop entirely), so the CVAE learns to satisfy the *surrogate's* idea of the measurements and inherits its error (§7.2). **Every number in this document is measured with the exact code; the surrogate is never used for evaluation.**
 
----
+### 4.5 Training data
+None is stored. Every step draws 512 new limbs with OpenLimbTT's recipe (`ComponentSampler`: skin scores uniform in the box → regression → uniform tibia length). Checked against the original docker generator: means agree within 0.05 standard deviations, spreads within 3 %. Fixed validation (512) and test (1024) sets with exact measurements are built once per run from separate seeds.
 
-## 5. Training setup and hyperparameters
-
-### 5.1 Training data
-None is stored. Every training step draws 512 new limbs using exactly OpenLimbTT's recipe: skin scores uniform in the box, the linear regression, and a uniform tibia length. I checked this sampler against the original generator run in docker: the means agree to within 0.05 standard deviations and the spreads to within 3 %. Because every limb is new, the model cannot overfit in the usual sense.
-
-### 5.2 The training loss
-The total loss is a weighted sum of five terms, all computed on standardised values:
+### 4.6 Loss, hyperparameters and reasons
+Total loss = weighted sum, all on standardised values:
 
 | term | what it asks for | weight |
 |---|---|---|
 | reconstruction | rebuilt limb (encoded code) ≈ true limb | 1 |
-| KL | encoder's codes look like standard normal noise | 0.01 (ramped up over 20 epochs) |
-| encoded-code measurement | rebuilt limb has the right measurements (via surrogate) | 1 |
-| random-code measurement | *random-code* limbs have the right measurements (via surrogate) | 1 |
-| plausibility | random-code limbs stay inside the plausible box | 200 |
-
-### 5.3 Hyperparameters: values and reasons
-I say explicitly which values were tuned. **Only the plausibility weight was.** Everything else is a standard or reasoned default and has not been swept.
+| KL | encoder's codes look like N(0, I) | 0.01 (ramped over 20 epochs) |
+| encoded-code measurement | rebuilt limb has the right measurements (surrogate) | 1 |
+| random-code measurement | random-code limbs have the right measurements (surrogate) | 1 |
+| plausibility | random-code limbs stay inside the box | 200 |
 
 | hyperparameter | value | why | tuned? |
 |---|---|---|---|
-| code size | 4 | Equals the number of degrees of freedom left free by 7 measurements (11 − 7) | reasoned, not swept |
-| KL weight (β) | 0.01 | Kept low so the encoder can store enough detail for accurate reconstruction. A strong KL is not needed to make random codes valid, because the random-code losses enforce that directly. §8.9 confirms the codes still behave like standard normal noise. | no |
-| KL warm-up | 20 epochs | Common protection against "posterior collapse", where the network learns to ignore the code early in training | no |
-| loss weights: reconstruction, both measurement losses | 1, 1, 1 | Equal weighting of standardised quantities as a neutral starting point | no |
-| plausibility weight | 200 | Chosen from a sweep over 1, 10, 50 and 200 (§6) as the value that nearly eliminates implausible limbs at negligible accuracy cost | **yes** |
-| network width / depth | 256 / 4 residual blocks | Ample capacity for an 11-input, 11-output problem. Residual blocks with layer normalisation train stably. | no |
-| optimiser | AdamW, learning rate 10⁻³, weight decay 10⁻⁴ | Standard defaults for MLPs | no |
-| learning-rate schedule | 3-epoch linear warm-up, then cosine decay to 0 | Standard; the warm-up avoids early instability | no |
-| gradient clipping | 1.0 | Guards against occasional large gradients from the plausibility hinge | no |
-| batch size × steps × epochs | 512 × 100 × 150 (7.7 M limbs) | Fits in about 15 min on a laptop CPU. Fresh data every step, so more steps cannot overfit. | no |
-| measurement noise during training | 0 | Synthetic measurements are exact. **This must change for real clinical data** (§10). | no |
-| checkpoint selection | lowest validation score (reconstruction error + random-code measurement error + fraction outside the box) | Rewards accuracy, validity and plausibility together | no |
+| code size | 4 | = 11 − 7 free degrees of freedom | reasoned |
+| KL weight β | 0.01, 20-epoch warm-up | low, so the encoder can carry enough detail; random codes are made valid by the random-code losses, not by a strong KL. Encoder codes still have variance 0.87–0.92 (§7.8) | no |
+| loss weights | 1, 1, 1 | neutral | no |
+| plausibility weight | 200 | from the sweep in §7.4 | **yes** |
+| width / depth | 256 / 4 residual blocks | ample for 11 → 11 | no |
+| optimiser | AdamW, lr 10⁻³, weight decay 10⁻⁴ | standard | no |
+| schedule | 3-epoch warm-up + cosine to 0 | standard | no |
+| gradient clipping | 1.0 | guards against hinge spikes | no |
+| batch × steps × epochs | 512 × 100 × 150 (7.7 M fresh limbs) | ~15–25 min on a laptop CPU | no |
+| measurement noise | 0 | synthetic measurements are exact. **Must change for real data** (§11) | no |
+| checkpoint selection | lowest validation `score` = √recon MSE + prior measurement RMSE + fraction outside box | rewards accuracy, validity, plausibility together | no |
+
+### 4.7 Measurement dropout (optional variant)
+Clinics rarely record all seven numbers. The same `LimbCVAE` (`models/lit_cvae.py`) with `model.meas_dropout=true` (default `false`, which gives the plain CVAE of §4.1–4.6) adds a missing-value mask:
+- encoder and decoder receive `[m · mask, mask]` (a missing measurement is zeroed, i.e. the population mean, and flagged), so one network serves every pattern from "all 7" to "none" (an unconditional limb sampler);
+- per training sample, with probability `p_full` = 0.2 all seven are kept, otherwise *k* ~ U{`min_keep`, …, 6} (`min_keep` = 0) are kept, a uniformly random subset;
+- the two measurement losses (encoded-code and random-code) score **observed entries only**; reconstruction, KL and plausibility are unchanged, so missing measurements are constrained only by what the training distribution implies;
+- validation `score` is computed under fixed random masks (`val/full_*` = all given). Everything else, including data, surrogate, schedule and weights, is as in §4.6.
 
 ---
 
-## 6. What happened during development
+## 5. Using the model
 
-1. **Surrogate.** A 2-epoch trial run (2.7 mm error) checked the pipeline. The full 40-epoch run reached 0.32 mm and was kept.
-2. **First CVAE (plausibility weight 1).** It reproduced the measurements well (0.35 mm), but **20 % of random-code limbs fell outside the plausible box**, mostly by small amounts. The random-code measurement loss was pulling limbs toward extreme combinations that the weak plausibility penalty did not stop.
-3. **Plausibility sweep.** I retrained with weights 10, 50 and 200. On the 1024 test limbs, the fraction outside the box fell steadily while measurement error barely moved:
-
-| plausibility weight | outside box | mean measurement error |
-|---|---|---|
-| 1 | 22.5 % | 0.367 mm |
-| 10 | 10.8 % | 0.374 mm |
-| 50 | 4.9 % | 0.384 mm |
-| 200 | 1.9 % | 0.381 mm |
-
-*(These are quick end-of-training checks, 1 limb per request. §8.4 gives the full evaluation for 1, 50 and 200.)*
-
-4. **Choice.** Weight 200 was kept as the final model. The full evaluation (§7–8) was then run on weights 1, 50 and 200.
+```bash
+python claude/data/generate.py ckpt=<best.ckpt> measurements=[300,290,280,270,120,110,115] n_samples=32 save_meshes=true
+```
+Measurements are in mm in the order Circ 1–4, Length 1, Width 1, Width 2. With a measurement-dropout checkpoint a measurement may be left out: `measurements=[300,null,280,null,120,110,null]`. It writes `components.npy` (n × 11), `measurements_check.json` (requested vs exact re-measured), optionally one `.obj` per limb. `temperature<1` shrinks the family; `reject_implausible=true` (default) resamples until every limb is inside the box. Because every generated limb can be re-measured exactly, any outlier can be detected and discarded.
 
 ---
 
-## 7. How the model was evaluated
+## 6. How the model is evaluated
 
-The evaluation deliberately avoids anything I wrote for training:
-- **Test limbs:** 1024 limbs from OpenLimbTT's **original** generator, run in docker. None were used in training.
-- **Requests:** for each test limb, the requested measurements are its exact measurements.
-- **Judging:** every mesh and every measurement, true or generated, comes from the **original** `SSM_Driver.py`.
+`evaluate.py` deliberately avoids anything written for training:
+- **Test limbs:** 1024 limbs from OpenLimbTT's **original** generator run in docker (`openlimbtt-env`), none used in training.
+- **Requests:** the exact measurements of each test limb.
+- **Judging:** meshes through the original `get_verts`, measurements through the (corrected) exact code.
 
-The experiments, each answering one question:
-
-| | question | sample size |
+| | question | size |
 |---|---|---|
 | A | Do generated limbs have the requested measurements? | 1024 requests × 8 random codes = 8192 limbs |
 | B | Are they plausible? | the same 8192 |
 | C | Could the decoder represent a specific real limb? | 1000 test limbs |
-| D | For one request, are the family members genuinely different shapes? | 500 requests × 64 random codes = 32 000 limbs |
-| E | Does each of the 4 code numbers do something? | 100 requests |
+| D | For one request, are family members genuinely different? | 500 requests × 64 codes = 32 000 limbs |
+| E | Does each code number do something? | 100 requests |
 
-**Shape distances** (all in mm) used below:
-- **Vertex RMSE:** every OpenLimbTT mesh has the same 7732 vertices in the same order, so vertex *i* of one limb is compared with vertex *i* of the other. It is the root-mean-square 3-D distance, a "typical per-vertex distance".
-- **Chamfer distance:** for every vertex, the distance to the *nearest* vertex on the other surface, averaged over both surfaces. It measures how far apart the surfaces are and ignores sliding along the surface, so it is always smaller than vertex RMSE.
-- **Hausdorff distance:** the largest of those nearest-vertex distances, i.e. the single worst spot.
-- **Point-to-plane distance:** like chamfer, but only counts distance perpendicular to the surface.
-- **Family spread:** for each family member, the vertex RMSE to the family's average shape, averaged over members. How far a typical member sits from the middle of its family.
+**Shape distances** (mm): *vertex RMSE* (vertex *i* vs vertex *i*, RMS 3-D distance); *chamfer* (mean nearest-vertex distance both ways, ignores sliding, always ≤ vertex RMSE); *Hausdorff* (worst nearest-vertex distance); *point-to-plane* (like chamfer but only the component perpendicular to the surface); *family spread* (vertex RMSE of a member to its family's average, averaged over members).
 
 ---
 
-## 8. Results
+## 7. Results (synthetic OpenLimbTT limbs, corrected measurement)
 
-### 8.1 Generated limbs have the requested measurements
+### 7.1 Generated limbs have the requested measurements
+8192 random-code limbs, exact code:
 
-**Point.** Limbs generated from random codes reproduce the requested measurements to well within the 1 % / 5 mm target.
-
-**Evidence.** Over 8192 random-code limbs, measured with the exact code:
-
-| measurement | typical size (mm) | mean error (mm) | worst error (mm) | bias (mm) | mean error (%) | worst error (%) |
+| measurement | typical (mm) | mean error (mm) | worst (mm) | bias (mm) | mean (%) | worst (%) |
 |---|---|---|---|---|---|---|
-| Circ 1 | 341 | 0.46 | 5.72 | +0.06 | 0.14 | 1.74 |
-| Circ 2 | 330 | 0.44 | 4.11 | +0.04 | 0.14 | 1.60 |
-| Circ 3 | 316 | 0.42 | 4.30 | +0.01 | 0.13 | 1.75 |
-| Circ 4 | 301 | 0.49 | 5.78 | −0.01 | 0.17 | 2.68 |
-| Len 1 | 135 | 0.38 | 6.06 | +0.05 | 0.30 | 7.64 |
-| Wid 1 | 126 | 0.20 | 2.78 | +0.03 | 0.16 | 2.58 |
-| Wid 2 | 132 | 0.21 | 2.25 | +0.01 | 0.16 | 1.44 |
-| **all** | | **0.37** | 6.06 | +0.03 | **0.17** | 7.64 |
+| Circ 1 | 350 | 0.59 | 6.90 | +0.26 | 0.17 | 2.04 |
+| Circ 2 | 337 | 0.52 | 4.69 | +0.15 | 0.16 | 1.60 |
+| Circ 3 | 323 | 0.48 | 4.88 | +0.03 | 0.15 | 1.76 |
+| Circ 4 | 307 | 0.56 | 6.66 | −0.16 | 0.19 | 1.82 |
+| Len 1 | 135 | 0.42 | 5.28 | −0.06 | 0.33 | 6.31 |
+| Wid 1 | 126 | 0.23 | 2.86 | +0.05 | 0.19 | 2.67 |
+| Wid 2 | 132 | 0.23 | 2.58 | +0.02 | 0.17 | 1.60 |
+| **all** | | **0.43** | 6.90 | +0.04 | **0.19** | 6.31 |
 
-Across all 57 344 individual measurements (8192 limbs × 7), the median error is 0.26 mm and 99 % are within 1.8 mm (0.86 %). Per limb, taking the worst of its 7 measurements:
-- **0.1 %** of limbs have any measurement more than 5 mm off,
-- **3.4 %** have any measurement more than 2 mm off,
-- **4.0 %** have any measurement more than 1 % off.
-
-"Bias" is the average *signed* error. It is at most 0.06 mm, so there is no systematic over- or under-sizing. Encoded-code limbs are slightly better: 0.32 mm mean, worst 2.8 mm, none more than 5 mm off, and 1.4 % with any measurement more than 1 % off.
+Over all 57 344 measurements the median error is 0.31 mm and 99 % are within 2.2 mm (0.97 %). Per limb, worst of its 7: **0.17 %** have any measurement > 5 mm off; **5.2 %** have any > 1 % off. Encoded-code limbs (1024): mean 0.37 mm, worst 2.85 mm. Bias is at most 0.26 mm (small positive circumference bias at the proximal end).
 
 ![A](figs/fig_A_measurement_accuracy.png)
-*Left: absolute error per measurement. Middle: the same as a percentage, with the 1 % target as a red line. Each box covers the middle 50 % of limbs, the line is the median, and the whiskers reach the 1st and 99th percentiles. Blue = random codes (normal use), orange = encoded codes. Right: cumulative distribution of percentage error over all measurements. The height of the curve at x shows what percentage of measurements have error below x %.*
+*Left: absolute error per measurement; middle: percentage, 1 % target in red (boxes = middle 50 %, line = median, whiskers 1st–99th percentile; blue = random codes, orange = encoded codes). Right: cumulative distribution of percentage error.*
 
 ![A2](figs/fig_A2_error_vs_value.png)
-*One panel per measurement. The x-axis is the requested value; the y-axis is the signed error (generated − requested). Darker hexagons contain more limbs.*
+*Signed error (generated − requested) against the requested value; darker = more limbs.*
 
-**Analysis.** The error does not depend on limb size (flat clouds in A2), so the model works equally well for small and large limbs. The one visible exception is very short limbs (Len 1 below about 90 mm), which show slightly larger positive length errors. Length is also the measurement with the largest *percentage* error, simply because it is the shortest. The worst cases are rare and are extremes: the 6.1 mm length error is on an unusually short limb. Because `generate.py` re-measures every generated limb with the exact code, any such outlier can be detected and discarded in practice.
-
-### 8.2 Accuracy is limited by the surrogate
-
-**Point.** The generator reproduces the measurements about as accurately as the surrogate it was trained against, which suggests the surrogate is the bottleneck.
-
-**Evidence.**
-
+### 7.2 Accuracy is limited by the surrogate
 | | Circ 1 | Circ 2 | Circ 3 | Circ 4 | Len 1 | Wid 1 | Wid 2 | all |
 |---|---|---|---|---|---|---|---|---|
-| surrogate error vs exact (mm) | 0.39 | 0.39 | 0.38 | 0.42 | 0.27 | 0.19 | 0.19 | 0.32 |
-| CVAE, encoded code (mm) | 0.38 | 0.39 | 0.39 | 0.43 | 0.31 | 0.17 | 0.19 | 0.32 |
-| CVAE, random code (mm) | 0.46 | 0.44 | 0.42 | 0.49 | 0.38 | 0.20 | 0.21 | 0.37 |
+| surrogate vs exact (mm) | 0.39 | 0.39 | 0.38 | 0.42 | 0.27 | 0.18 | 0.19 | 0.32 |
+| CVAE, encoded code (mm) | 0.48 | 0.47 | 0.43 | 0.47 | 0.35 | 0.19 | 0.21 | 0.37 |
+| CVAE, random code (mm) | 0.59 | 0.52 | 0.48 | 0.56 | 0.42 | 0.23 | 0.23 | 0.43 |
 
-**Analysis.** The encoded-code errors match the surrogate's own errors almost measurement by measurement. The model is doing what it was asked: satisfy the surrogate. Random codes add only about 0.05 mm on top. Improving the surrogate, or fine-tuning the CVAE for a short time against exact measurements, is therefore the most direct route to better accuracy. At 0.37 mm against a 5 mm target, this is not currently a priority.
+The CVAE is doing what it was asked (satisfy the surrogate) and the residual is dominated by the surrogate's own error; random codes add ~0.06 mm. The most direct route to better accuracy is a better surrogate or short fine-tuning against exact measurements. At 0.43 mm against a 5 mm target this is not a priority.
 
-### 8.3 Against a plain MLP and against optimisation (GA and Gauss–Newton)
+### 7.3 Against a plain MLP and against optimisation
+All methods use **the same 1024 test limbs** and the same statistics.
 
-**Point.** Against a plain MLP regressor of the same architecture, trained on the same data, the CVAE is about twice as accurate, equally fast, and the only one of the two that returns a family. Against optimisation the picture is different. The GA as it was configured in `genetic_alg.ipynb` is 4× less accurate than the CVAE and returns implausible limbs. Once repaired, optimisation reproduces the measurements **essentially exactly** (median error below 10⁻⁹ mm), with every limb plausible. It is more accurate than the CVAE on every statistic. What the CVAE keeps is speed, about 400× faster per limb and ~10 000× faster per 64-limb family, and a family that is learnt rather than constructed.
+**How the comparison methods were built.**
+- **Plain MLP:** the CVAE decoder with the code removed: same residual MLP, optimiser, schedule, seed and data (measurements from the same surrogate); only loss is MSE on the limb numbers. `model=mlp`.
+- **GA as in the notebook:** `genetic_alg.ipynb`'s pygad set-up unchanged: 32 candidates × 50 generations, genes = standardised limb numbers in [−3, 3], steady-state selection of 4 parents, single-point crossover, "random" mutation of 20 % of genes; fitness = −mean squared *relative* measurement error. Problems found by reading the notebook and pygad: (1) with a `gene_space`, "random" mutation *replaces* genes with fresh uniform draws, so the search cannot fine-tune; (2) ±3σ boxes are mostly outside the plausible region (98 % of its answers are outside it, by a median 65 % of the box half-width); (3) its Levenberg–Marquardt refinement never had an effect (standardised numbers passed to a function expecting raw ones, a mis-shaped and sign-flipped Jacobian, and the refined limb was only printed); (4) it measures the true limb again at every fitness call, one limb at a time (46 s per request as written).
+- **Improvements, none changing the objective** (`models/ga.py`, `fast_measure.py`): faster exact measurement (same formulas on the band of edges a plane can reach, verified per limb, falling back to the exact code; matches to 1e-13 mm; 5–8× faster per limb in batches, *a speed figure from before the fix; not re-benchmarked*); an **improved GA** (genes = the generator's box coordinates in [−1, 1] so every candidate is plausible, Gaussian mutation shrinking from 0.3 to 0.03 half-widths on 30 % of genes, per-gene blend crossover, 8 parents, 2 elites; settings chosen on 48 separate development limbs, *not re-tuned after the fix*); the **notebook's LM refinement fixed**; and **Gauss–Newton (GN) inside the box** (smallest step removing the linearised relative error via pseudo-inverse, step limited to the box and halved until the error drops, Jacobian by finite differences, untuned), run from the improved GA's answer, from the **box centre** (no GA), and from **8 random plausible limbs** (a family).
 
-All methods below were run on **the same 1024 test limbs** and judged by the original measurement code with the same statistics. This settles the earlier caveat that the GA numbers came from different limbs.
+**Evidence** (exact code; mm; `report/eval_reports/ga.txt`, `mlp.txt`):
 
-#### 8.3.1 How the comparison methods were built
-
-**Plain MLP.** It is the CVAE's decoder with the code removed: the same residual MLP (width 256, 4 blocks), input (the 7 measurements, standardised), output (the 11 standardised limb numbers), optimiser (AdamW, 10⁻³, weight decay 10⁻⁴), 3-epoch warm-up + cosine schedule, gradient clipping, seed, and data (512 × 100 × 150 fresh limbs, with training measurements from the same surrogate). Its only loss is the mean squared error on the limb numbers: no KL, no measurement loss, no plausibility loss. The checkpoint with the lowest validation error was kept.
-
-**GA as in the notebook.** `genetic_alg.ipynb`'s pygad set-up, unchanged: 32 candidates × 50 generations, genes = standardised limb numbers in [−3, 3], steady-state selection of 4 parents, single-point crossover, "random" mutation on 20 % of genes. The fitness is minus the mean squared *relative* measurement error (`SSM_Driver.MeasurementLoss`). Re-running it on the test limbs gives 1.54 mm mean error, in line with the 1.6–2.1 mm recorded in `GA_results*.csv`.
-
-**What was wrong with it.** Reading the notebook and pygad's source turned up four problems:
-1. **Mutation can never settle.** Because a `gene_space` is given, pygad's "random" mutation *replaces* 2 of the 11 genes in every child with a fresh uniform draw from the whole [−3, 3] range, at every generation. There is no small step, so the search cannot fine-tune a good candidate.
-2. **Most of the search space is implausible.** A box of ±3 standard deviations on each limb number is mostly outside the region OpenLimbTT's generator can produce (§2.2). **97.9 %** of the notebook GA's answers are outside the plausible box, by a median of 65 % of the box half-width.
-3. **The Levenberg–Marquardt refinement never had an effect.** `func` was `dataset.get_measures`, which expects raw limb numbers, but was given standardised ones. The finite-difference Jacobian was also reshaped in the wrong order and had its sign flipped. Finally, the refined limb was only printed; the unrefined `best_solution` was what went into the CSV.
-4. **It is slow.** Each fitness call measured the true limb again as well as the candidate, one limb at a time: **51 s** per request on this laptop.
-
-**Improvements tried.** None of the changes alters the objective:
-- **Faster exact measurement** (`openlimb_cvae/fast_measure.py`). The original code intersects all ~50 000 mesh edges with every measurement plane. The new version applies the same formulas only to the band of edges a plane can reach, and checks per limb that the band assumption holds, falling back to the original code if it does not. On 1536 random limbs, including limbs far outside the box, its answers match the original code to 10⁻¹³ mm. It is 5–8× faster per limb when a GA generation is measured in one batch. Every number in this section still re-measures the final limbs with the **original** code.
-- **Improved GA** (`openlimb_cvae/ga.py`, same library, same objective, same ~1600-measurement budget). The genes are the generator's own box coordinates in [−1, 1], so every candidate is plausible by construction. Mutation is a Gaussian step on 30 % of genes, whose size shrinks from 0.3 to 0.03 box half-widths over the run. The GA uses per-gene blend crossover, steady-state selection of 8 parents, and keeps 2 elites. These settings were chosen from about 35 configurations (operators, mutation schedule, population/generation split) on **48 separate development limbs**, never on the test limbs, and confirmed with a second seed (0.52 and 0.43 mm on the development limbs).
-- **The notebook's LM refinement, fixed.** The faults in item 3 are corrected and nothing else is changed: 10 steps, unconstrained, starting from the notebook GA's answer.
-- **Gauss–Newton inside the plausible box (GN).** This is a local least-squares solver on the relative measurement error, working in box coordinates. Each step is the smallest change to the limb numbers that removes the linearised error (pseudo-inverse, because there are 7 equations for 11 unknowns). The step is limited to the box and halved until the error drops. The Jacobian comes from finite differences, i.e. 22 extra measurements in one batch, so no gradient of the measurement code is needed. GN was not tuned. It was run from three kinds of starting point: the improved GA's answer, the **centre of the box** (no GA at all), and **random plausible limbs** (8 per request, giving a family).
-
-#### 8.3.2 Evidence
-
-What each change contributes (1024 test requests; errors in mm against the original measurement code):
-
-| method | mean | median | 99 % within | worst | limbs any > 1 % off | outside box | measurements per request | time per request |
+| method | mean | median | 99 % within | worst | any > 5 mm | any > 1 % | outside box | measurements/request |
 |---|---|---|---|---|---|---|---|---|
-| GA (notebook), as recorded in the CSVs (other limbs) | 1.6–2.1 | 1.2–1.6 | 7.3–8.8 | 15–18 | 77–94 % | 98 % | 1600 | 51 s as written |
-| GA (notebook), rerun on the test limbs | 1.54 | 1.10 | 6.68 | 12.8 | 75.4 % | 97.9 % | 1582 | 1.4 s ¹ |
-| + its LM refinement, fixed | 0.015 | < 10⁻⁹ | 0.50 | 2.92 | 0.2 % | 96.9 % | 1831 | 1.8 s ¹ |
-| GA (improved) | 0.55 | 0.30 | 3.01 | 7.94 | 6.3 % | **0 %** | 1530 | 1.2 s |
-| GA (improved) + GN | 0.0024 | < 10⁻⁹ | < 10⁻⁶ | 1.81 | 0 % | **0 %** | 1623 | 1.3 s |
-| **GN from the box centre (no GA)** | **0.0001** | **< 10⁻⁹** | **< 10⁻⁶** | **0.28** | **0 %** | **0 %** | **96** | **0.11 s** |
-| GN from 8 random plausible limbs (8192 limbs) | 0.0072 | < 10⁻⁹ | < 10⁻⁶ | 20.9 | 0.2 % | **0 %** | 110 per limb | ≈ 0.1 s per limb |
+| GA (notebook), rerun | 1.56 | 1.10 | 6.87 | 11.8 | 23.1 % | 76.3 % | 98.0 % | 1582 |
+| + its LM refinement, fixed | 0.016 | < 10⁻⁹ | 0.50 | 2.66 | 0 % | 0.2 % | 97.6 % | 1831 |
+| GA (improved) | 0.56 | 0.31 | 3.04 | 7.24 | 0.4 % | 5.4 % | **0 %** | 1530 |
+| GA (improved) + GN | 0.0008 | < 10⁻⁹ | < 10⁻⁶ | 0.74 | 0 % | 0 % | **0 %** | 1621 |
+| **GN from the box centre** | **0.00007** | < 10⁻⁹ | < 10⁻⁶ | **0.19** | **0 %** | **0 %** | **0 %** | **96** |
+| GN from 8 random plausible limbs | 0.0074 | < 10⁻⁹ | < 10⁻⁶ | 18.5 | 0.09 % | 0.2 % | 0 % | 111 per limb |
 
-¹ with the fast measurement; the notebook as written takes 51 s.
+Against the learnt models:
 
-Against the learnt models (same statistics as §8.1):
-
-| | **CVAE** | **plain MLP** | **GA (notebook)** | **GA (improved)** | **GN, box centre** | **GN, random starts** |
+| | **CVAE** | **MLP** | **GA (notebook)** | **GA (improved)** | **GN, box centre** | **GN, random starts** |
 |---|---|---|---|---|---|---|
-| mean error | 0.37 mm (0.17 %) | 0.72 mm (0.31 %) | 1.54 mm (0.65 %) | 0.55 mm (0.21 %) | **0.0001 mm** | 0.007 mm |
-| median error | 0.26 mm | 0.50 mm | 1.10 mm | 0.30 mm | **< 10⁻⁹ mm** | < 10⁻⁹ mm |
-| 99 % of measurements within | 1.8 mm (0.86 %) | 3.3 mm (1.35 %) | 6.7 mm (2.3 %) | 3.0 mm (1.0 %) | **< 10⁻⁶ mm** | < 10⁻⁶ mm |
-| worst error | 6.1 mm (7.6 %) | 8.5 mm (4.8 %) | 12.8 mm (3.9 %) | 7.9 mm (2.4 %) | **0.28 mm (0.06 %)** | 20.9 mm (5.3 %) |
-| limbs with any measurement > 5 mm off | 0.1 % | 0.9 % | 22.3 % | 0.6 % | **0 %** | 0.06 % |
-| limbs with any measurement > 1 % off | 4.0 % | 10.2 % | 75.4 % | 6.3 % | **0 %** | 0.2 % |
-| outside the plausible box | 2.1 % | 0.6 % (not enforced) | 97.9 % | **0 %** | **0 %** | **0 %** |
+| mean error | 0.43 mm (0.19 %) | 0.81 mm (0.33 %) | 1.56 mm (0.65 %) | 0.56 mm (0.21 %) | **0.00007 mm** | 0.007 mm |
+| median error | 0.31 mm | 0.56 mm | 1.10 mm | 0.31 mm | < 10⁻⁹ | < 10⁻⁹ |
+| 99 % of measurements within | 2.2 mm | 3.4 mm | 6.9 mm | 3.0 mm | < 10⁻⁶ | < 10⁻⁶ |
+| worst error | 6.9 mm (6.3 %) | 8.4 mm (4.4 %) | 11.8 mm (4.6 %) | 7.2 mm (2.1 %) | 0.19 mm | 18.5 mm (5.3 %) |
+| any > 5 mm off | 0.17 % | 0.49 % | 23.1 % | 0.4 % | 0 % | 0.09 % |
+| any > 1 % off | 5.2 % | 10.5 % | 76.3 % | 5.4 % | 0 % | 0.2 % |
+| outside plausible box | 1.6 % | 0.6 % (not enforced) | 98.0 % | 0 % | 0 % | 0 % |
 | answers per request | any number | 1 | 1 | 1 | 1 | any number |
-| time (this laptop CPU) | **0.29 ms for 1 limb, 0.62 ms for 64** | 0.26 ms for 1 limb | 51 s (1.4 s with fast measurement) | 1.2 s | 0.11 s | ≈ 0.1 s per limb, ≈ 7 s for 64 |
-| distance to the true limb (chamfer) | 3.6 mm per random-code member; 2.4 mm best of 4 | 2.9 mm | 7.0 mm | 4.0 mm | 3.1 mm | — |
-| family spread (8 members, 500 requests) | 5.1 mm | — | — | — | — | 5.9 mm |
-| true limb → nearest of 8 members (vertex RMSE) | 3.9 mm | — | — | — | — | 3.8 mm |
+| time (laptop CPU) | **0.29 ms (1 limb), 0.88 ms (64)** | 0.35 ms | 46 s as written, 1.4 s fast | 1.2 s | 0.11 s | ≈ 0.1 s per limb |
+| chamfer to the true limb | 3.63 mm per random-code member; 2.48 best of 4 | 2.85 mm | 7.03 mm | 3.99 mm | 3.06 mm | — |
+| family of 8, 500 requests: spread / true → nearest member | 5.10 / 3.92 mm | — | — | — | — | 5.80 / 3.81 mm |
 
 ![Plain MLP vs CVAE](figs/fig_compare_mlp.png)
 
 ![Optimisation vs CVAE](figs/fig_compare_ga.png)
-*Left and middle: cumulative distributions of measurement error on a log scale. Errors below 10⁻⁸ mm are drawn at 10⁻⁸ mm; that is where most Gauss–Newton results sit. Right: share of returned limbs outside the plausible box.*
-
-*Timing: same 16-thread laptop CPU, median over 20 requests (`claude/evaluate_ga.py`, `claude/evaluate_mlp.py`). "As written" is the notebook's own code path, timed on 3 requests. Full output: `report/eval_reports/ga.txt`.*
-
-#### 8.3.3 Analysis
-
-- **The notebook's GA was limited by its set-up, not by the idea.** Keeping the library, objective and budget, and changing only the search space and operators, cuts the mean error from 1.54 to 0.55 mm. The share of limbs with any measurement more than 1 % off falls from 75 % to 6 %, and every answer becomes plausible. A pure GA at this budget is still less accurate than the CVAE (0.55 vs 0.37 mm). The development runs suggest this is close to what a GA can do with ~1600 measurements: the best configuration found reached about 0.4–0.5 mm.
-- **The problem is almost linear, so local least squares solves it.** Gauss–Newton from the centre of the box needs about 4 iterations (96 measurements). It matches every measurement to within 0.001 mm on 1023 of the 1024 requests; the one exception has a worst error of 0.28 mm. Starting from the GA's answer does *not* help: it is 17× more expensive and slightly less reliable (8 of 1024 requests stall, mostly where the GA put the limb against the box edge). **For this problem the GA is unnecessary.** The repaired notebook refinement reaches similar accuracy but inherits the notebook GA's implausible starting points (97 % outside the box). Constraining the search to the box matters as much as the refinement does.
-- **Why optimisation beats the CVAE on accuracy.** It uses the exact measurement code at every step. The CVAE is trained against the surrogate and inherits its ~0.3 mm error (§8.2). The requests here are also exactly reachable, since they come from OpenLimbTT limbs, which suits an exact solver. For clinical measurements that OpenLimbTT cannot reach exactly, GN would return the closest plausible least-squares fit; this has not been tested (§10).
-- **Optimisation can also produce families.** Starting GN from 8 random plausible limbs gives 8 different limbs that all match the measurements. Their spread (5.9 mm) is close to the CVAE's (5.1 mm, same 8-member protocol), and they sit about as close to the true limb (3.8 vs 3.9 mm to the nearest member). This is the exact-measurement version of the reference family in §8.8. It fails more often than the box-centre start: 0.9 % of runs stall, and the worst is 20.9 mm. Every limb can be re-measured, though, so failures can be detected and restarted.
-- **What the CVAE still offers.** Speed and a learnt distribution. One limb takes 0.3 ms against 0.1 s for GN (~400×); a 64-limb family takes 0.6 ms against ~7 s (~10 000×). That matters for large-scale generation or interactive use, but not for processing a few hundred clinical records. The CVAE's family is also a *learnt* conditional distribution: how likely each shape is given the measurements, as implied by OpenLimbTT's generator. The GN family is simply wherever random starting points happen to be projected. Which of the two better describes "limbs with these measurements" is not tested here.
-- **CVAE vs plain MLP.** The CVAE is about 2× more accurate on the mean, median and 99th-percentile error. The share of limbs with any measurement more than 1 % off is 4.0 % against 10.2 %, and more than 5 mm off is 0.1 % against 0.9 %. The single worst error is mixed: smaller for the CVAE in mm (6.1 against 8.5 mm) but smaller for the MLP in percent (4.8 % against 7.6 %), since the CVAE's worst case is on a short Length 1 measurement. The MLP's signed errors are biased towards smaller-than-requested circumferences (−0.20, −0.30, −0.61 and −0.85 mm for circumferences 1–4). That is the "average of several limbs" effect predicted in §2.4, but it does not dominate: the MLP's typical error is still only 0.3 %. The MLP's single answer is close to the true limb (2.9 mm chamfer, closer than a typical CVAE member at 3.6 mm), which is expected because the average minimises expected squared error. What it cannot show is the 5.4 mm of shape variation the measurements allow (§8.6).
-- **What the MLP comparison does *not* show.** The CVAE differs from the MLP in two ways at once: it has a code, *and* it is trained with extra losses (measurement consistency for both encoded and random codes, and plausibility). I did not separate them, so the accuracy gain cannot be attributed to the code alone (§11).
-
-**Caveats.**
-- The GA's settings were tuned on 48 development limbs, one run per configuration; GN was not tuned. The CVAE and MLP were not tuned either, apart from the plausibility weight.
-- Optimisation times are for one request at a time on a 16-thread CPU. Requests are independent, so throughput scales with cores; the CVAE's times are for a single forward pass.
-- The "as recorded" row uses different random limbs; every other row uses the 1024 test limbs.
-- One training run of the plain MLP, with the same untuned hyperparameters as the CVAE.
-
-### 8.4 Generated limbs are plausible, and making them so is cheap
-
-**Point.** 97.9 % of random-code limbs lie inside the plausible box. Achieving this cost almost nothing in accuracy or diversity.
-
-**Evidence.** Full evaluation of three plausibility weights:
-
-| plausibility weight | outside box | outside by > 5 % of box width | mean error | 99th-percentile error | family spread |
-|---|---|---|---|---|---|
-| 1 | 20.4 % | 7.9 % | 0.348 mm | 0.77 % | 5.53 mm |
-| 50 | 4.3 % | 0.26 % | 0.364 mm | 0.82 % | 5.39 mm |
-| **200 (final)** | **2.1 %** | **0.05 %** | 0.371 mm | 0.86 % | 5.43 mm |
-
-![B](figs/fig_B_plausibility.png)
-*Left: for the 2.1 % of limbs outside the box, how far outside they are, as a fraction of the box's half-width. Right: the same over all limbs as a cumulative curve. The jump at 0 shows 97.9 % inside.*
-
-![compare](figs/fig_compare_variants.png)
-*Each small panel is one metric (named in its title) for the three trained models.*
+*Cumulative distributions of measurement error on a log scale (errors below 10⁻⁸ mm drawn at 10⁻⁸); right: share of returned limbs outside the box.*
 
 **Analysis.**
-- Raising the weight from 1 to 200 cuts implausible limbs tenfold for +0.02 mm of error.
-- The limbs that remain outside are only just outside: the worst is 7.6 % of the box half-width.
-- Diversity is essentially unchanged, so the penalty removes implausible shapes without shrinking the family.
-- The one cost is in the extreme tail. The single worst error rose from 5.4 % (weight 1) to 7.6 % (weight 200). When a request sits near the edge of what OpenLimbTT can represent, the plausibility constraint and the measurement constraint compete, and the model trades a little accuracy to stay plausible. `generate.py` can also discard any out-of-box limb (`reject_implausible=true`).
+- **CVAE vs MLP.** The CVAE is ~2× more accurate on mean, median and 99th-percentile error and has 0.17 % vs 0.49 % of limbs with any measurement > 5 mm off. The MLP's signed errors are biased towards smaller-than-requested circumferences (−0.45, −0.56, −0.82, −1.12 mm for Circ 1–4): the "average of several limbs" effect of §3, small but systematic. The MLP's single answer is close to the true limb (2.85 mm chamfer, closer than a typical CVAE member at 3.63 mm; expected, the average minimises squared error) but it cannot show the 5.4 mm of shape variation the measurements allow. *The CVAE differs from the MLP in two ways at once (a code, and extra losses), which I did not separate (§11).*
+- **The notebook GA was limited by its set-up, not the idea.** Same library, objective and budget, changing only search space and operators: mean error 1.56 → 0.56 mm, limbs with any measurement > 1 % off 76 % → 5 %, every answer plausible. A pure GA at this budget remains less accurate than the CVAE.
+- **The problem is almost linear, so local least squares solves it.** GN from the box centre needs ~4 iterations (96 measurements) and matches every measurement to within 0.001 mm on essentially all requests (worst 0.19 mm). Starting from the GA's answer does not help (17× more expensive, slightly less reliable). **For this problem the GA is unnecessary.**
+- **Why optimisation beats the CVAE on accuracy:** it uses the exact measurement at every step; the CVAE inherits the surrogate's ~0.3 mm. The requests are also exactly reachable (they come from OpenLimbTT limbs). For clinical measurements OpenLimbTT cannot reach exactly, GN would return the closest plausible least-squares fit (untested).
+- **What the CVAE offers:** speed (0.3 ms vs 0.1 s per limb; 0.9 ms vs ~7 s for 64) and a *learnt* conditional distribution. GN from random starts also gives a family (spread 5.80 vs the CVAE's 5.10 mm, similar nearest-member distance) but fails more often (0.9 % of runs stall) and its distribution is "wherever the starts are projected". Which better describes "limbs with these measurements" is not tested.
 
-### 8.5 The decoder can represent any specific limb to about 1 mm
+*Caveats.* GA settings tuned on 48 development limbs, one run per setting (before the fix, not repeated); GN untuned; CVAE and MLP untuned apart from the plausibility weight; optimisation times are single-request on a 16-thread CPU; one training run per model.
 
-**Point.** When given the right code, the decoder rebuilds a specific test limb to about 1 mm. The random-code families always contain a limb close to the true one.
+### 7.4 Plausibility, and what it costs
+Full evaluation of three plausibility weights (1024 test limbs, 8 random codes; `report/figs/compare_variants.md`):
 
-**Evidence.** Distance from generated limbs to the true test limb (1000 limbs, mean ± standard deviation, mm):
+| plausibility weight | outside box | outside by > 5 % of box width | mean error | 99th-pct error | family spread |
+|---|---|---|---|---|---|
+| 1 | 19.8 % | 8.0 % | 0.346 mm | 0.76 % | 5.49 mm |
+| 50 | 4.4 % | 0.27 % | 0.360 mm | 0.80 % | 5.41 mm |
+| **200 (final)** | **1.6 %** | **0.07 %** | 0.435 mm | 0.97 % | 5.42 mm |
+
+Quick end-of-training checks (1 limb per request, validation/test split inside training, so not comparable with the table above): outside box 21.2 / 9.7 / 4.9 / 2.6 % and exact prior MAE 0.36 / 0.37 / 0.38 / 0.46 mm for weights 1 / 10 / 50 / 200.
+
+![B](figs/fig_B_plausibility.png)
+*Left: for the limbs outside the box, how far outside (fraction of the box half-width). Right: cumulative over all limbs; the jump at 0 shows the share inside.*
+
+![compare](figs/fig_compare_variants.png)
+
+**Analysis.** Weight 1 → 200 cuts implausible limbs twelvefold (19.8 → 1.6 %) and the remaining ones are barely outside (worst 8 % of the half-width), at a cost of +0.09 mm mean error (this is a larger cost than before the fix, when it was +0.02 mm; the variation between single training runs is not known). Diversity is essentially unchanged, so the penalty removes implausible shapes without shrinking the family. When a request sits near the edge of what OpenLimbTT can represent, plausibility and measurement compete and the model trades a little accuracy to stay plausible. Weight 50 is the better accuracy/plausibility compromise if 4 % implausible is acceptable.
+
+### 7.5 The decoder can represent any specific limb to about 1 mm
+Distance from generated limbs to the true test limb (1000 limbs, mean ± std, mm):
 
 | generated from | chamfer | Hausdorff | point-to-plane | vertex RMSE |
 |---|---|---|---|---|
-| encoded code (has seen the true limb) | 0.95 ± 0.42 | 2.00 ± 1.09 | 0.40 ± 0.20 | 1.10 ± 0.62 |
-| random code, every limb | 3.60 ± 1.61 | 13.4 ± 7.1 | 3.10 ± 1.71 | 8.11 ± 4.17 |
-| random code, closest of 4 | 2.42 ± 0.82 | 8.36 ± 4.07 | 1.82 ± 0.90 | 5.09 ± 2.61 |
+| encoded code (has seen the true limb) | 0.97 ± 0.41 | 2.04 ± 1.08 | 0.41 ± 0.20 | 1.12 ± 0.60 |
+| random code, every limb | 3.63 ± 1.59 | 13.5 ± 7.1 | 3.13 ± 1.69 | 8.17 ± 4.10 |
+| random code, closest of 4 | 2.48 ± 0.83 | 8.59 ± 4.15 | 1.88 ± 0.91 | 5.20 ± 2.62 |
 | *for scale: two unrelated limbs* | *13.8* | | | |
 
 ![C](figs/fig_C_shape_distance.png)
-*One panel per distance measure: histograms over 1000 test limbs. Orange = encoded code; blue = every random-code limb; green = closest of 4 random-code limbs. The dashed line in the chamfer panel marks two unrelated limbs.*
 
-**Analysis.**
-- The encoded-code row shows the decoder's *capacity*: nothing about the architecture stops it reaching a specific limb.
-- The random-code rows are **not errors.** A random-code limb is meant to be a *different* limb with the same measurements. What they show is that the family stays in the true limb's neighbourhood: 3.6 mm chamfer against 13.8 mm for unrelated limbs.
-- Even with only 4 random draws, the closest one is usually within 2.4 mm chamfer of the true limb.
+The encoded-code row is the decoder's *capacity*. The random-code rows are **not errors**: a random-code limb is meant to be a *different* limb with the same measurements. They show the family stays in the true limb's neighbourhood (3.6 mm vs 13.8 mm for unrelated limbs); the closest of just 4 draws is usually within 2.5 mm chamfer.
 
-### 8.6 The same measurements give genuinely different shapes
-
-**Point.** Changing the random code changes the shape substantially while leaving the measurements almost fixed. The families are real shape variation, not noise.
-
-**Evidence.** Over 500 requests with 64 random codes each:
-- **Shape moves:**
-  - the family spread (typical distance of a member from the family's average) is **5.4 mm**, with 95 % of families between 3.0 and 7.5 mm;
-  - two random members differ by 7.6 mm vertex RMSE and 3.3 mm chamfer;
-  - the most different pair in a family is typically 20 mm apart.
-- **Measurements stay put:** the standard deviation of each measurement across a family's 64 members is 0.44–0.50 mm for the circumferences, 0.40 mm for length and 0.22 mm for the widths (0.14–0.32 %).
+### 7.6 The same measurements give genuinely different shapes
+500 requests × 64 codes:
+- **Shape moves:** family spread **5.42 mm** (95 % of families 3.2–7.2 mm); two random members differ by 7.6 mm vertex RMSE and 3.2 mm chamfer; the most different pair in a family is typically 20 mm apart.
+- **Measurements stay put:** the standard deviation across a family's 64 members is 0.50–0.56 mm for the circumferences, 0.43 mm for length, 0.24 mm for widths (0.15–0.34 %).
 
 ![D](figs/fig_D_family_diversity.png)
-*Six panels, labelled D1–D5.*
-- *D2 (top-left): histograms over the 500 families of three ways to measure shape difference within a family.*
-- *D1 (top-middle): for each measurement, how much it varies across a family's 64 members.*
-- *D3 (top-right), D4 (bottom-left) and D5 (bottom row): explained in §8.7 and §8.8.*
+*D1 (top-middle): variation of each measurement within a family. D2 (top-left): three ways of measuring shape difference within a family. D3–D5: §7.7–7.8.*
 
 ![D6](figs/fig_D6_example_families.png)
-*Each row is one request; the requested measurements are listed on the right. The three panels are horizontal slices through the limbs at three heights. Black = the true test limb; coloured = 8 generated limbs with different random codes; grey dashed = 8 limbs from the independent reference family of §8.8 (none survived for row 3). Every outline in a row has the same seven measurements.*
+*Each row is one request; three horizontal slices of the limbs. Black: true test limb; coloured: 8 generated limbs; grey dashed: 8 limbs of the independent reference family (§7.7). Every outline in a row has the same seven measurements.*
 
-**Analysis.**
-- Shape varies about ten times more than the measurements do (5.4 mm vs about 0.4 mm). The code therefore controls the shape information the measurements leave open, which is exactly its intended role.
-- The example slices show where that freedom lies: mainly the front–back profile and the shape of the distal end, not overall size. This makes sense, since the circumferences, length and widths already fix size.
+Shape varies ~10× more than the measurements do. The example slices show where the freedom lies: mainly the front–back profile and the distal end, not size (the measurements already fix size).
 
-### 8.7 The variation is the right kind, and is effectively 3-dimensional
+### 7.7 The variation is the right kind, and its width agrees with an independent construction
+- **Measurement-preserving directions (D4).** At each family's mean limb, the 4 directions (11 − 7) that to first order change no measurement contain on average **94.3 %** of the family's variance.
+- **Dimensionality (D3).** PCA of each family's meshes: variance split 64 / 27 / 6 / 2 % over the first four directions; three capture 95 %; participation ratio 2.05. One of the four free directions carries little shape change for most requests (OpenLimbTT's later modes are small); all four code numbers are nonetheless used (§7.8).
+- **Independent reference family (D5).** For 100 requests: draw 300 random plausible limbs, push each onto the requested measurements by Gauss–Newton, discard any outside the box, keep those matching within 1.5 mm. 83 requests kept ≥ 20 limbs (about 90 on average). Spread: CVAE 5.68 vs reference 5.29 mm (CVAE ≈ 7 % wider); reference limb → nearest CVAE limb 1.95 mm (density baseline, reference → nearest other reference: 1.68 mm); CVAE limb → nearest reference limb 2.03 mm; true limb → nearest of 64 CVAE limbs 2.09 mm (95 %: 0.89–4.15). The CVAE covers the reference family almost as densely as the reference covers itself and does not invent shapes the reference would never reach. The reference is itself a heuristic, so this is corroboration, not proof.
 
-**Point.** Almost all within-family variation lies along directions that, to first order, leave all seven measurements unchanged. In practice the families vary in about three independent ways.
-
-**Evidence.**
-- **Measurement-preserving directions (panel D4).** At each family's average limb, I computed which directions in the 11-number space change no measurement, to first order. There are 4 such directions (11 − 7). On average **94.6 %** of a family's variance lies in them (95 % of families: 84–99 %).
-- **Dimensionality (panel D3).** A principal-component analysis of each family's meshes finds that its variance splits 66 % / 25 % / 7 % / 2 % across its first four directions. Three directions capture 95 %.
-
-**Analysis.**
-- The 94.6 % confirms the model has learnt the geometry of the problem. It moves limbs along directions that keep the measurements, rather than jiggling them randomly. The remaining ~5 % is exactly what produces the ~0.4 mm measurement scatter of §8.6.
-- The families being ~3-dimensional rather than 4 means one of the four free directions carries little shape change for most requests. That is plausible, since OpenLimbTT's later modes are small and the box limits how far they can move. It is not evidence that a code number is unused: §8.9 shows all four are.
-
-### 8.8 Family width agrees with an independent construction
-
-**Point.** A family built by a completely different method has almost the same width, and it overlaps closely with the CVAE family.
-
-**Evidence.** For 100 requests I built a **reference family** without the CVAE:
-1. draw 300 random plausible OpenLimbTT limbs;
-2. push each onto the requested measurements by Gauss–Newton optimisation;
-3. discard any that left the plausible box;
-4. keep only those whose exact measurements match to within 1.5 mm.
-
-82 requests kept at least 20 limbs, about 91 on average; the other 18 were dropped. **These are synthetic OpenLimbTT limbs, not patients.**
-
-| | result |
-|---|---|
-| family spread: CVAE vs reference | 5.72 mm vs 5.34 mm (CVAE ≈ 7 % wider) |
-| each reference limb → nearest CVAE limb ("coverage") | 1.92 mm |
-| each CVAE limb → nearest reference limb ("precision") | 1.98 mm |
-| each reference limb → nearest *other* reference limb (baseline) | 1.68 mm |
-| true test limb → nearest of its 64 CVAE limbs | 2.10 mm (95 % of requests: 0.85–4.26 mm) |
-
-*(All vertex RMSE. Figure D, bottom-middle: each dot is one request, comparing the two families' spreads; the dashed line is equality. Bottom-right: the four nearest-neighbour distances.)*
-
-**Analysis.**
-- **Width:** the two methods agree to within 7 %. For almost every request the CVAE family is slightly wider (dots just above the line in D5).
-- **Coverage:** every reference limb has a CVAE limb about 1.9 mm away. That is barely more than the 1.7 mm between reference limbs themselves, so the CVAE family covers the reference family almost as densely as the reference family covers itself.
-- **Precision:** every CVAE limb has a reference limb about 2.0 mm away, so the CVAE is not inventing shapes the reference method would never reach.
-- **Limit of this test:** the reference family is itself a heuristic and not a perfect sample of all valid limbs, so this is strong corroboration rather than proof. If a narrower family is preferred, `generate.py temperature<1` shrinks it.
-- **The same check with the exact measurement code** (§8.3): Gauss–Newton from 8 random plausible limbs per request, no surrogate and no filtering, gives a family spread of 5.9 mm against the CVAE's 5.1 mm on the same 8-member protocol.
-
-### 8.9 All four code numbers are used
-
-**Point.** Each of the four code numbers changes the shape and not the measurements. None has been ignored by the network.
-
-**Evidence.** For 100 requests, I set all code numbers to 0 and then moved one to ±2, i.e. two standard deviations.
-- Shape change for that move: 5.9, 3.3, 8.4 and 3.6 mm (vertex RMSE, one number per code).
-- Largest change in any measurement: 0.7–0.8 mm on average.
-- The encoder's codes across the test limbs have variance 0.86–0.93 per number (a standard normal has 1). The KL is 1.2–1.3 nats per number; a number the network ignored would sit near 0.
+### 7.8 All four code numbers are used
+Code number set to ±2 with the others at 0 (100 requests): shape change 6.5, 3.6, 6.9, 5.6 mm (vertex RMSE); mean largest measurement change 0.8–1.0 mm (worst single 5.2 mm). Encoder code variance 0.87–0.92 and KL 1.2–1.4 nats per number (an ignored number would sit near 0). No posterior collapse; the codes behave like standard-normal noise, supporting the low KL weight.
 
 ![E](figs/fig_E_latent_traversal.png)
-*Left: shape change when one code number moves from 0 to ±2. Middle: largest measurement change for the same move. Right: two measures of whether each code number is used; zero would mean unused.*
+
+### 7.9 Seven measurements determine ~95 % of OpenLimbTT's shape variation
+A typical vertex is 24.9 mm from the average limb across the population; 5.4 mm from the family average within a family sharing the measurements. (5.4/24.9)² ≈ 4.7 % of the variance is left; the measurements account for ~95 %. This is relative to OpenLimbTT, not to real anatomy.
+
+### 7.10 Before vs after the measurement fix
+Same architecture, protocol and test limbs; everything retrained. (The "before" column is from the earlier, pre-correction write-up, which is no longer kept.)
+
+| | before | after |
+|---|---|---|
+| surrogate mean error (mm) | 0.32 | 0.32 |
+| CVAE mean error, random codes (mm / %) | 0.37 / 0.17 | 0.43 / 0.19 |
+| CVAE outside box (w = 200) | 2.1 % | 1.6 % |
+| family spread (mm) | 5.43 | 5.42 |
+| plain MLP mean error (mm) | 0.72 | 0.81 |
+| GA (notebook) mean error (mm) | 1.54 | 1.56 |
+| GA (improved) mean error (mm) | 0.55 | 0.56 |
+| GN from box centre mean error (mm) | 0.0001 | 0.00007 |
+
+The correction does not change the conclusions. The small CVAE/MLP accuracy loss is within what single untuned training runs can vary by, but I have not measured that variation.
+
+### 7.11 Missing measurements (dropout model)
+`evaluate_dropout.py`: 1024 held-out limbs from this package's sampler (fixed seed, exact measurements; not the docker generator), 4 random-code limbs per limb and pattern, final model trained as in §4.7 for 150 epochs (`report/eval_reports/dropout.txt`). "obs" / "miss" = mean absolute error (mm) of the exact re-measured limb on the measurements that were given / left out. "Family std" = per-vertex standard deviation (mm) over the 4 samples of one request, on 100 limbs.
+
+**All seven, and one dropped at a time.**
+
+| pattern | obs MAE | miss MAE | outside box | vertex RMSE to true limb | family std |
+|---|---|---|---|---|---|
+| all 7, standard CVAE (`fx_w200`) | 0.44 | – | 1.4 % | 5.28 | 2.83 |
+| all 7, dropout model | 0.64 | – | 4.4 % | 5.53 | 3.02 |
+| drop Circ 1 | 0.70 | 3.46 | 3.7 % | 6.24 | 3.65 |
+| drop Circ 2 | 0.69 | 2.08 | 3.7 % | 6.05 | 3.23 |
+| drop Circ 3 | 0.67 | 2.21 | 3.0 % | 5.73 | 3.19 |
+| drop Circ 4 | 0.68 | 5.36 | 2.8 % | 5.73 | 3.06 |
+| drop Length 1 | 0.75 | 11.48 | 3.2 % | 8.15 | 4.01 |
+| drop Width 1 | 0.80 | 2.11 | 3.6 % | 6.11 | 3.15 |
+| drop Width 2 | 0.79 | 2.40 | 3.8 % | 5.85 | 3.19 |
+
+**k measurements given** (random subsets, 8 masks per limb):
+
+| k | obs MAE | miss MAE | outside box | vertex RMSE | family std |
+|---|---|---|---|---|---|
+| 6 | 0.72 | 4.16 | 3.6 % | 6.32 | 3.38 |
+| 5 | 0.79 | 4.99 | 2.3 % | 7.17 | 3.75 |
+| 4 | 0.84 | 6.14 | 1.7 % | 8.14 | 4.26 |
+| 3 | 0.92 | 8.01 | 1.4 % | 9.69 | 4.94 |
+| 2 | 1.00 | 11.01 | 1.1 % | 12.25 | 5.88 |
+| 1 | 0.87 | 17.54 | 0.5 % | 15.84 | 7.25 |
+| 0 | – | 33.40 | 0.0 % | 18.92 | 8.88 |
 
 **Analysis.**
-- A known failure of VAEs is that some code numbers end up ignored. That has not happened here.
-- The encoder's codes have variance close to 1. This supports the choice of a low KL weight: the codes still look like standard normal noise, so random codes land where the decoder expects them.
-
-### 8.10 Seven measurements determine ~95 % of OpenLimbTT's shape variation
-
-**Point.** Knowing the seven measurements removes most of the uncertainty about a limb's shape.
-
-**Evidence.**
-- Across OpenLimbTT's population, a typical vertex is **24.9 mm** from the average limb.
-- Within a family sharing the same measurements, a typical vertex is **5.4 mm** from the family average.
-- The share of variance left is (5.4 / 24.9)² ≈ 5 %, so the measurements account for about **95 %**.
-
-**Analysis.**
-- This is encouraging for the overall aim: routine clinical measurements carry most of the shape information that OpenLimbTT can express.
-- The remaining ~5 % is what the families represent. It is also what no measurement-based method can recover without more information.
-- The figure is relative to OpenLimbTT, not to real anatomy. Real limbs may vary in ways OpenLimbTT does not capture (§9).
+- **The observed measurements are still honoured** (0.6–1.0 mm whatever else is missing) and the family widens as information is removed (3.0 → 8.9 mm per vertex from seven given to none), which is the intended behaviour: the free degrees of freedom grow and the code carries them.
+- **Missing measurements are inferred, not guessed**: dropping any one circumference or width costs 2–5 mm on that measurement (the other six largely determine it); dropping Length 1 costs 11 mm because nothing else in the set carries the limb's length. With none given the error is 33 mm, the population spread.
+- **The price of generality**: with all seven given the dropout model is worse than the dedicated CVAE (0.64 vs 0.44 mm; 4.4 vs 1.4 % outside the box). Capacity is shared across 2⁷ patterns and 80 % of training samples are masked. Raising `p_full` or `w_plaus` are the obvious first remedies; neither was tried.
+- **Plausibility** is best when few measurements are given (nothing competes with the box) and worst with all seven (4.4 %).
+- *Single training run, no tuning of `p_full`, `min_keep` or the weights. This evaluation draws its own test limbs, so the standard CVAE's 0.44 mm differs slightly from §7.1's 0.43 mm.*
 
 ---
 
-## 9. What this means
+## 8. Real-data experiments
 
-- **The approach works on its own terms.** Given measurements that OpenLimbTT can represent, the model produces as many plausible, measurement-matching limbs as required, in milliseconds, with accuracy that is far inside the 1 % / 5 mm target.
-- **Families are the right output.** The measurements leave real shape freedom, about 5 mm per vertex. A single answer, whether from the GA, the NN or anything else, silently picks one point in that range. Families let later work, such as socket design or simulation, see and use the range.
-- **The ceiling is now OpenLimbTT, not the model.** The generator can only produce what the shape model can express. For the planned use this is the key open question. The model's accuracy on synthetic data is no longer the bottleneck; how well OpenLimbTT represents real patients is.
+Both scripts are driven by hydra `key=value` overrides, their configs are defined inside the files (`CONFIG`), and they write to `claude/outputs/…/<timestamp>/` (override with `out_dir=`). Full run outputs of the synthetic tests are in `report/eval_reports/wild_synthetic*.txt` and `csv_synthetic.txt`.
 
----
+### 8.1 `evaluate_wild.py`: meshes with ground-truth shape
 
-## 10. Limitations
+**Question.** Given a real 3-D limb (any pose, any tessellation), measure it with the OpenLimb definitions, feed the seven numbers to the CVAE, and compare the generated family with the real shape.
 
-1. **Synthetic data only.** Everything above uses OpenLimbTT limbs, so requests are always measurements that OpenLimbTT can reach exactly.
-2. **Real measurements will be noisier.** Clinical tape measurements vary by millimetres between clinicians, and a real set of seven may not match any OpenLimbTT limb exactly. The model was trained without measurement noise.
-3. **Out-of-population data.** OpenLimbTT's 33 scans are mostly male and from the UK, Australia and the US, with no South Asian participants. The Sri Lankan measurements may fall partly outside what it can represent. In that case no generator built on OpenLimbTT can match them exactly, and the model's behaviour there is untested.
-4. **"Plausible" means reachable by OpenLimbTT's generator**, not anatomically validated.
-5. **Initial results.** One training run per setting, no ablations, and only the plausibility weight was tuned.
-6. **Vertex-based distances** slightly overestimate chamfer and Hausdorff distances compared with exact surface-to-surface distances.
+#### 8.1.1 Modes
+```bash
+python claude/evaluation/evaluate_wild.py mode=make_test_data mesh_dir=<dir> n_test=20 [noise_mm=0.3] [retessellate=true]
+python claude/evaluation/evaluate_wild.py mode=annotate       mesh_dir=<dir>               # 3-D annotation tool in the browser
+python claude/evaluation/evaluate_wild.py mode=evaluate ckpt=<best.ckpt> mesh_dir=<dir> [k_samples=16 align=icp ...]
+```
+Meshes: any format `igl.read_triangle_mesh` reads (obj, stl, ply, off, mesh); `unit_scale` converts to mm (e.g. 1000 for metres). `make_test_data` generates OpenLimbTT limbs, applies a random rigid pose and optionally a 4× re-tessellation and Gaussian vertex noise, and writes exact annotations (and `reference_measurements`, `true_components`); it is the stand-in until real scans exist.
 
-## 11. Next steps
+#### 8.1.2 Annotation
+The measurement planes cannot be defined by a single vertex on an arbitrary pose, so the annotation is geometric:
+- **Circ 1–4:** 3 points on each circumference plane (any 3 around the limb; the plane is through them);
+- **Width 1–2:** 2 points, the medial and lateral extremes of the slice;
+- **Length 1:** 2 end points.
 
-1. **Real measurements.** Run the Sri Lankan measurement sets through the model. For each one, report the closest measurements OpenLimbTT can reach, found by optimisation; I'll call the leftover mismatch the "reachability gap". It says how far outside OpenLimbTT's range the patient is, per measurement, without needing a scan. Then report how the CVAE's errors compare with that gap.
-2. **The 40 scans.** As a case series, report the distance from each scan to its nearest family member, alongside OpenLimbTT's own best fit to that scan (the floor). First check that none of the 40 were among OpenLimbTT's 33 training scans.
-3. **Train with measurement noise** matched to clinical inter-rater variability before using real data.
-4. **CVAE vs optimisation families.** The GA / Gauss–Newton comparison on the test limbs is done (§8.3). Still open: whether the CVAE's learnt family or Gauss–Newton from random starts better represents "all plausible limbs with these measurements", and whether a CVAE limb followed by a few Gauss–Newton steps gives exact measurements at close to CVAE speed.
-5. **Ablation.** Separate the effect of the code from the effect of the extra losses: train an MLP with the measurement-consistency loss, and a CVAE without it.
+File `<mesh stem>.json` next to the mesh (or in `ann_dir`), coordinates in mm in the frame of the (unit-scaled) mesh:
+```json
+{"version": 2,
+ "planes": {"circ1": [p,p,p], "circ2": [p,p,p], "circ3": [p,p,p], "circ4": [p,p,p]},
+ "widths": {"width1": [p,p], "width2": [p,p]},
+ "length1": [p,p],
+ "reference_measurements": [7 numbers, optional]}
+```
+**Definitions used.** The limb **axis** is the mean of the four plane normals, each sign-aligned to Circ 1's. Circ *i* = perimeter of the mesh cut by plane *i* (the loop nearest the points; `loop_mode=nearest|largest|all`). Width *j* = extent of the cut, at the pair's mid-point on a plane normal to the axis, along the pair's direction (projected perpendicular to the axis). Length 1 = |(a − b)·axis|. All cuts use the corrected rule of §2.3. **Validated:** on randomly posed, re-tessellated synthetic limbs all seven reproduce `SSMGeometry`'s exact measurements to 0.000 mm.
 
-## 12. Reproducing
+**The annotation tool (`mode=annotate`).** Starts a local server (`port=8765`, `open_browser=true`) serving `claude/evaluation/annotator.html` (three.js from a CDN; needs internet). Features: translucent mesh with opacity slider and wireframe toggle; click to place the active point on the surface (Shift = far side); drag points along the surface; **live** planes, slice loops and all seven measurement readouts; per-mesh list with annotated-tick; the SSM mean limb with its planes and slices in an inset as a placement guide; keys: S save, N/P next/previous, Backspace clear point. Saved JSON is exactly the format above. JS and Python measurements agree on all seven numbers on a hand-annotated mesh. Verified in the browser pane; not yet used by anyone on real scans.
+
+#### 8.1.3 What the evaluation does per mesh
+1. Measure the mesh → 7 numbers; flag (never remove) any outside the generator's measurement range (`n_range=1000` generator limbs); warn if a slice has several loops.
+2. Decode the **z = 0 limb** and `k_samples` limbs z ~ N(0, T² I) (`temperature`; the statistics are importance-weighted back to N(0, I) when T ≠ 1), plus the **mean limb** as a "no information" baseline.
+3. **Align** the ground truth to each generated limb (`align=none|frame|icp`): *frame* builds a rigid frame from the annotation alone (axis pointing Circ 1 → Circ 4, width direction, their cross product, matched to the SSM's z/x; the sign of the width direction is ambiguous so both are tried); *icp* (default) refines with trimmed ICP (90 %). Note ICP can flatter the shape error; `frame` is the stricter comparison.
+4. **Shape distances** between area-uniform surface samples (`n_points`): symmetric point-to-surface and point-to-tangent-plane distance (via `igl.point_mesh_squared_distance`) → chamfer/ASSD, RMSE, Hausdorff, HD95, point-to-plane mean/RMSE/max. Registry: `SHAPE_METRICS`; choose the headline with `primary=`.
+5. Re-measure each generated limb exactly and report the measurement fidelity.
+6. `distribution_metrics()` over the z-family, per mesh:
+
+| statistic | meaning |
+|---|---|
+| `expected_error` | Monte-Carlo estimate of ∫ p(z) · d(G(m,z), x_true) dz; importance-weighted if T ≠ 1 |
+| `error_std_over_z`, `error_p05`, `error_p95` | spread of that error over z |
+| `best_of_k` | closest sample to the truth (oracle) |
+| `family_spread` | mean pairwise distance between samples E d(s, s′) |
+| `energy_score` | E d(s, truth) − ½ E d(s, s′): a proper scoring rule for the whole distribution, lower is better |
+| `calibration_ratio` | E d(s, truth) / E d(s, s′): ≈ 1 if the truth looks like a draw from the family; < 1 means the truth is closer to samples than samples are to each other (over-dispersed family or an easy truth); > 1 means the family misses the truth |
+| `skill_vs_mean_limb` | 1 − expected_error / (error of the mean limb) |
+| `expected_meas_err_mm` | expected re-measured error over z |
+| `frac_plausible`, `expected_error_plausible` | inside-the-box share, error restricted to those |
+
+The registries `SHAPE_METRICS` and `distribution_metrics` are the intended change points while the statistics are being decided.
+
+**Outputs:** `subjects.csv` (one row per mesh), `per_sample.npz`, `report.txt`, and with `save_meshes=N` the first N generated limbs plus the aligned ground truth as `.obj`.
+
+#### 8.1.4 Results on synthetic stand-ins (20 limbs, noise-free, random pose, re-tessellated)
+Final CVAE (`fx_w200`), K = 16, `align=icp`, `primary=chamfer`; stats over meshes (mean / median / p95):
+
+| quantity | mean | median | p95 |
+|---|---|---|---|
+| z = 0 chamfer (mm) | 0.95 | 0.90 | 1.66 |
+| z = 0 RMSE (mm) | 1.26 | 1.17 | 2.14 |
+| z = 0 Hausdorff / HD95 (mm) | 5.9 / 2.6 | 5.3 / 2.2 | 12.0 / 4.9 |
+| expected chamfer over z (mm) | 1.41 | 1.42 | 1.99 |
+| best of 16 (mm) | 0.63 | 0.64 | 0.89 |
+| mean limb chamfer (mm) | 6.95 | 7.38 | 9.94 |
+| family spread (mm, point-cloud chamfer) | 3.57 | 3.58 | 4.48 |
+| energy score | 0.58 | 0.57 | 0.88 |
+| calibration ratio | 0.67 | 0.66 | 0.77 |
+| skill vs mean limb | 0.76 | 0.80 | 0.90 |
+| measurement error of generated limbs, mean over z (mm) | 0.22–0.52 per measurement | | |
+| plausible | 99.1 % | | |
+
+Annotation-vs-reference measurement error is 0.000 mm for all seven.
+
+#### 8.1.5 Reading the numbers
+These are *upper bounds on how good things can look*: the ground truth is itself an OpenLimbTT limb (and ICP is helping). The calibration ratio of 0.67 says the generated family is a bit wider than the truth needs on this data (the truth is closer to samples than samples are to each other), consistent with §7.7's CVAE-slightly-wider-than-reference. A real limb outside OpenLimbTT's span will show best-of-K and skill degrading together; the mean-limb baseline (7 mm) is the yardstick.
+
+#### 8.1.6 Sensitivity to scan noise (important)
+Re-running with 0.3 mm i.i.d. Gaussian vertex noise (a mild scan): **circumferences measured on the noisy mesh are 10–13 mm (3–4 %) larger** than the true value, because noise lengthens the cut polyline. The model is fed inflated inputs: z = 0 chamfer goes 0.95 → 1.96 mm, best of 16 0.63 → 1.68, skill 0.76 → 0.64, measurement error of the generated limbs rises, and noisy slices break into spurious loops (widths with 2–7 loops, warned). Real scans must be smoothed / resampled before being measured, or the measurement must be done on a smoothed copy; the tape-measure analogue is a measurement made over a compressed or lumpy surface. This is the dominant practical risk of mesh-derived measurements and is not handled in the code.
+
+#### 8.1.7 Not covered
+Real scans (partial coverage at the open end, holes, scanner noise, annotation variability between raters); the shape errors near an open end are understated by point-to-plane distances; `loop_mode=nearest` assumes the annotated points are near the right loop.
+
+### 8.2 `evaluate_csv.py`: tables of measurements
+
+**Question.** Given a CSV of real 1-D measurements (no shapes), does the family of limbs the CVAE generates honour them?
 
 ```bash
-python claude/train_surrogate.py                            # surrogate → claude/data/surrogate_scaled.pt
-python claude/train.py model.w_plaus=200                    # CVAE (configs in claude/conf)
-python claude/evaluate.py ckpt=<best.ckpt>                  # experiments A–E with the original code
-python claude/plot_eval.py <eval dir> --out claude/report/figs
-python claude/generate.py ckpt=<best.ckpt> measurements=[300,290,280,270,120,110,115] n_samples=32 save_meshes=true
-
-# plain-MLP baseline (§8.3)
-python claude/train.py model=mlp monitor=val/mse
-python claude/evaluate_mlp.py ckpt=<mlp best.ckpt>          # same 1024 limbs, same statistics, timing
-
-# GA / Gauss-Newton comparison (§8.3); ~45 min on 12 CPU workers
-python claude/evaluate_ga.py
+python claude/evaluation/evaluate_csv.py ckpt=<best.ckpt> csv=<file.csv> [id_col=Patient] [unit_scale=10] [k_samples=16] [temperature=1.0] [tolerances_mm=[1,2,5]]
 ```
+**Column matching.** Case, spaces, underscores and `(mm)`-style suffixes are ignored; "Circumference 1" = "Circ 1". Needed: Circ 1–4, Length 1, Width 1–2; other columns are ignored; `id_col` is carried to the outputs; `unit_scale` converts to mm.
 
-Measurements are given in mm in the order Circ 1–4, Len 1, Wid 1, Wid 2. Full numerical output of each evaluation is in `report/eval_reports/`. The final CVAE is `claude/outputs/single/2026-09-29_15-42-26/checkpoints/best.ckpt`; the plain MLP is `claude/outputs/single/2026-09-30_14-33-03/checkpoints/best.ckpt` (evaluation in `claude/outputs/eval/mlp/`).
+**Cleaning rules (counted separately in the report):**
+- Rows with an empty / `null` / `none` / `nan` / `na` / `n/a` / `#n/a` / `-` / `?` / non-numeric / non-finite value in any of the seven columns are **removed**.
+- Rows with a value ≤ 0 are **removed**: physically impossible, an entry error (`drop_nonpositive=true`, default).
+- **Nothing else is removed.** Values that are possible but unusual are real data. Rows with any measurement outside the range of the generator's own limbs (`n_range=3000` limbs, min–max per measurement) are **flagged**, reported separately, and still included in every statistic.
+
+**What it does.** Per kept row: decode the z = 0 limb and K random-code limbs, re-measure them with the exact code, compare with the input. Statistics, for z = 0, for every sample, and for the mean over z, for each measurement and all seven pooled: MAE, median AE, RMSE, bias, 95 % limits of agreement (bias ± 1.96 sd), p95, max, MAPE, relative RMSE (%), z-scored RMSE (the same scale as the training-time prior measurement RMSE), the fraction within each tolerance, R². Then the split in-range / out-of-range, the spread over z of the re-measured values, mean per-vertex diversity, plausibility, and "all seven within *t* mm" at z = 0, over samples, and for "at least one of K". Outputs: `per_row.csv` (inputs, z = 0 outputs, mean and std over z, per-measurement error, `in_range`, `out_of_range_measures`), `summary.json`, `report.txt`, `per_sample.npz`.
+
+**Results on a synthetic table** (`make_test_csv.py`: 60 rows with 4 empty/null/NA/non-numeric values, 1 negative, 1 out-of-range Circ 1 (× 1.4) and aliased headers, so 55 rows kept; `csv_synthetic.txt`):
+- the cleaning removed exactly the injected rows (4 + 1);
+- in-range rows (54): MAE 0.41 mm, 98.7 % of values within 2 mm, 100 % within 5 mm, bias +0.008 mm;
+- the one out-of-range row has MAE 35 mm: such a row is not representable by OpenLimbTT, so a large discrepancy there is "outside the model's domain", not "model error", which is why it is reported separately;
+- all seven within 2 mm: 96.4 % of rows at z = 0, 93.1 % of samples, 98.2 % for at least one of 16 samples;
+- the spread over z of re-measured values is 0.22–0.56 mm, family diversity 3.0 mm per vertex, 96.8 % of samples inside the box.
+
+---
+
+## 9. Reproducing the results
+
+Every table and figure above is regenerated by the commands in [`../README.md`](../README.md), which lists, per section of this document, the exact command, its inputs and its output file. Reproducing the core results (§7.1–7.9) end to end took about 1 h 40 min on a 24-core laptop CPU (surrogate 19 min, the five trainings in parallel 13 min, the three `evaluate.py` runs in parallel 24 min, MLP evaluation 2 min, GA/GN evaluation 42 min). Text reports of the runs shown here are kept in `report/eval_reports/`; everything else under `claude/outputs/` is git-ignored.
+
+---
+
+## 10. Code map and conventions
+
+| path | what it is |
+|---|---|
+| `train_surrogate.py`, `train.py` | stage 1 (surrogate), stage 2 (CVAE; `model.meas_dropout=true` or `model=mlp` for the variants); hydra |
+| `common.py` | repository paths, hydra resolvers, `sys.path` set-up |
+| `data/geometry.py` | `SSMGeometry` (components → vertices → measurements, same maths as `LegMeasurementDataset.get_verts`), `ComponentSampler`, plausibility box, constants |
+| `data/measure_fixed.py` | the corrected measurement (§2.3) |
+| `data/fast_measure.py` | `FastMeasure` (same numbers, faster in batches), `BoxMap` (limb numbers ↔ generator box coordinates) |
+| `data/datamodule.py` | `LimbDataModule` (streaming, no stored dataset) |
+| `data/generate.py` | families of limbs for given measurements |
+| `data/lr_map.npz`, `data/surrogate_*.pt` | regression coefficients extracted from `LR.pkl`; the trained surrogates |
+| `models/networks.py`, `lit_cvae.py`, `lit_mlp.py`, `lit_surrogate.py` | networks and Lightning modules |
+| `models/ga.py` | the notebook GA, its LM refinement fixed, the improved GA, box-constrained Gauss–Newton |
+| `evaluation/evaluate.py`, `plot_eval.py` | experiments A–E against the original docker generator; their figures |
+| `evaluation/evaluate_mlp.py`, `evaluate_ga.py` | MLP baseline; GA / Gauss–Newton comparison and timings |
+| `evaluation/evaluate_dropout.py` | missing-measurement patterns (§7.11) |
+| `evaluation/evaluate_wild.py`, `annotator.html` | experiment on ground-truth meshes, test-data generator, 3-D annotation tool |
+| `evaluation/evaluate_csv.py`, `make_test_csv.py` | experiment on a CSV of measurements; synthetic CSV generator |
+| `conf/` | hydra config groups (`data`, `model`, `trainer`, `logger`, `experiment`) and per-script yamls |
+| `report/` | this document, `figs/`, `eval_reports/` |
+
+**Conventions.**
+- Measurement order is always Circ 1–4, Length 1, Width 1, Width 2 (`SSM_Driver.get_measurement_details`). Units mm.
+- A "limb" is 11 raw numbers `[10 mode scores, tibia length]` (`data.scale=true`) or 10 (`false`).
+- `model.sample`, `data/generate.py` and the evaluation scripts de-standardise internally; checkpoints carry their own standardisation buffers.
+- Every checkpoint is tied to the surrogate it was trained against *and* to the measurement convention; retrain both when either changes.
+- `SSMGeometry.get_verts` is equivalent to the original but never materialises the (B, 10, 298 854) tensor.
+- The metrics logged in training: `val/*` are cheap (surrogate-based); `val_exact/*`, `test_exact/*` use the exact code on a subset. `score = √recon_mse + prior_meas_rmse + prior_outside_box` is the default checkpoint/sweep objective; a model without diversity can still score well, so read `diversity_vert_std` next to it (`z_dim=0` is the zero-diversity reference).
+
+---
+
+## 11. Limitations and next steps
+
+**Limitations.**
+1. **Synthetic data only.** Everything above uses OpenLimbTT limbs, so requests are always exactly reachable. No real clinical measurement or scan has been run.
+2. **Real measurements will be noisier** (tape measurements vary by millimetres between clinicians; scan-derived circumferences are inflated by noise, §8.1.6); the model was trained without measurement noise (`meas_noise=0`).
+3. **Out-of-population data.** OpenLimbTT's 33 scans are mostly male from the UK, Australia and the US; other populations (e.g. the Sri Lankan sets) may lie partly outside what it can represent. Nothing built on OpenLimbTT can match those exactly, and the model's behaviour there is untested (the out-of-range flag in §8.2 is the first diagnostic).
+4. **"Plausible" means reachable by OpenLimbTT's generator**, not anatomically validated.
+5. **Single runs.** One training run per setting, no ablation, only the plausibility weight tuned; the run-to-run variance is unknown (§7.10).
+6. **Vertex-based distances** in `evaluate.py` slightly overestimate chamfer / Hausdorff compared with true surface distances (`evaluate_wild.py` uses point-to-surface).
+7. **The annotation tool** has only been exercised on synthetic meshes; it needs internet for three.js; points cannot yet be placed inside the volume (surface only).
+8. **Speed figures** for `FastMeasure` and the GA settings are from before the correction and were not re-derived.
+9. **The dropout model** (§7.11) is one untuned run, trails the dedicated CVAE when all seven measurements are given, and has not been evaluated with realistic (noisy) measurements.
+
+**Next steps.**
+1. **Real measurements.** Run the Sri Lankan sets through `evaluate_csv.py`; for each, report the closest measurements OpenLimbTT can reach (optimisation) – the "reachability gap" – and compare the CVAE's errors with it.
+2. **The 40 scans.** Annotate them with the tool, run `evaluate_wild.py`, and report distance to the nearest family member alongside OpenLimbTT's own best fit to the scan (the floor). First check none were among OpenLimbTT's 33 training scans. Smooth the scans before measuring (§8.1.6).
+3. **Train with measurement noise** matched to clinical inter-rater variability before real data.
+4. **Decide the family statistic** (§8.1.3 registries): energy score and calibration ratio are my suggestion.
+5. **CVAE vs optimisation families**, and whether a CVAE limb plus a few Gauss–Newton steps gives exact measurements at close to CVAE speed.
+6. **Ablation:** separate the effect of the code from the extra losses (MLP with the measurement loss; CVAE without it).
+7. **Upstream the fix** to `SSM_Driver.py` / `measure_limbs.py` in the repository root (not done: this work stayed in `claude/`), and regenerate any dataset or number that used the old measurement.

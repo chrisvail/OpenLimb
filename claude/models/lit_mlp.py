@@ -4,7 +4,7 @@ import lightning as L
 import torch
 import torch.nn.functional as F
 
-from .geometry import load_transforms, plausibility_affine
+from data.geometry import load_transforms, plausibility_affine
 from .networks import MLP, MeasurementSurrogate
 
 

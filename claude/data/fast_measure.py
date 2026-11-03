@@ -1,14 +1,16 @@
 """Fast, exact evaluation of the seven measurements for search loops (GA fitness, finite differences).
 
+(Same numbers as measure_fixed.FixedMeasurements, i.e. SSM_Driver.measure with its edge-on-plane bug fixed.)
+
 SSM_Driver.measure intersects every one of the ~50k mesh edges with each of the six horizontal measurement
 planes, although a plane only ever cuts a thin band of them. Here the same formulas are applied to that band only:
 
 * at start-up, probe limbs decide per plane which vertices are *always* above / *always* below it;
   an edge joining two always-above (or two always-below) vertices can never be cut and is dropped;
 * at run time the "always" assumption is verified for every limb (a cheap comparison on the z coordinates);
-  limbs that violate it are sent through the original SSM_Driver.measure instead.
+  limbs that violate it are sent through the exact SSMGeometry measurement instead.
 
-So the result equals the original code for every limb (up to float summation order, ~1e-12 mm) - the band only
+So the result equals the exact (fixed) code for every limb (up to float summation order, ~1e-12 mm) - the band only
 decides how much work is done, never the answer.
 """
 import torch
@@ -57,7 +59,7 @@ class FastMeasure:
                 continue
             assert d["plane_normal"].flatten().tolist() == [0, 0, 1], "fast path assumes horizontal planes"
             p = int(d["plane_point"])
-            above = z > z[:, p:p + 1]
+            above = z >= z[:, p:p + 1]                            # '+' side iff d >= 0 (measure_fixed.py)
             always_above, always_below = above.all(0), (~above).all(0)
             static = always_above[e2v] | always_below[e2v]        # (E, 2): endpoint never changes side
             same_side = (always_above[e2v].all(1)) | (always_below[e2v].all(1))
@@ -77,7 +79,7 @@ class FastMeasure:
 
     @torch.no_grad()
     def __call__(self, raw):
-        """raw (B, 11) components -> (B, 7) measurements in mm, identical to SSM_Driver.measure."""
+        """raw (B, 11) components -> (B, 7) measurements in mm, identical to SSMGeometry.get_measures."""
         verts = self.geo.get_verts(raw)
         z = verts[..., 2]
         out = torch.empty(len(raw), len(self.planes), dtype=verts.dtype)
@@ -87,16 +89,16 @@ class FastMeasure:
                 out[:, k] = (z[:, pl["v1"]] - z[:, pl["v2"]]).abs()
                 continue
             zp = z[:, pl["p"]:pl["p"] + 1]
-            ok &= (((z > zp) == pl["expect"]) | pl["band"]).all(1)
+            ok &= (((z >= zp) == pl["expect"]) | pl["band"]).all(1)
             a, b = verts[:, pl["e0"]], verts[:, pl["e1"]]        # (B, Es, 3)
             t = (zp - a[..., 2]) / (b[..., 2] - a[..., 2])        # same expression as plane_edge_intersection
-            cut = (0 < t) & (t < 1)
+            cut = (a[..., 2] >= zp) != (b[..., 2] >= zp)          # same side rule as measure_fixed.py
             if pl["type"] == "width":
                 x = a[..., 0] + t * (b[..., 0] - a[..., 0])
                 inf = torch.full_like(x, float("inf"))
-                lo = torch.where(cut, x, inf).min(1).values.clamp_max(0)      # original takes the min together with 0
+                lo = torch.where(cut, x, inf).min(1).values
                 hi = torch.where(cut, x, -inf).max(1).values
-                out[:, k] = (hi - lo).clamp_min(0)
+                out[:, k] = torch.where(cut.any(1), hi - lo, torch.zeros_like(hi)).clamp_min(0)
             else:
                 pts = torch.nan_to_num(a + t[..., None] * (b - a), nan=float("inf"))
                 fp = pts[:, pl["fe"]]                              # (B, Fs, 3, 3)

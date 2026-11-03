@@ -1,4 +1,4 @@
-_target_: openlimb_cvae.lit_cvae.LimbCVAE
+_target_: models.lit_cvae.LimbCVAE
 
 # --- architecture -----------------------------------------------------------------
 z_dim: 4            # latent size injected into the decoder. 0 = deterministic regressor.
@@ -6,6 +6,11 @@ z_dim: 4            # latent size injected into the decoder. 0 = deterministic r
 width: 256
 depth: 4            # residual blocks per network
 dropout: 0.0
+
+# --- measurement dropout (some of the 7 measurements may be missing) ---------------------
+meas_dropout: false # true: train on random subsets of the measurements, encoder / decoder also get a mask
+p_full: 0.2         # (meas_dropout) prob. a training sample keeps all 7 measurements
+min_keep: 0         # (meas_dropout) otherwise k ~ U{min_keep..6} measurements are kept (0 = may see none)
 
 # --- optimisation -----------------------------------------------------------------
 lr: 1.0e-3

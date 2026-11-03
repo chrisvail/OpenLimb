@@ -1,0 +1,96 @@
+checkpoint claude/outputs/single/fx_w200/checkpoints/best.ckpt
+20 meshes in claude/outputs/wild_test; K=16 samples, T=1.0, align=icp, loop_mode=nearest, primary metric=chamfer
+
+limb_0000.obj: E_z[chamfer]=1.28 mm  best-of-16=0.73  z0=0.66  mean-limb=10.35  calib=0.68
+limb_0001.obj: E_z[chamfer]=1.10 mm  best-of-16=0.46  z0=0.48  mean-limb=9.92  calib=0.60
+limb_0002.obj: E_z[chamfer]=1.60 mm  best-of-16=0.74  z0=0.85  mean-limb=4.11  calib=0.54
+limb_0003.obj: E_z[chamfer]=0.98 mm  best-of-16=0.33  z0=0.40  mean-limb=7.92  calib=0.63
+limb_0004.obj: E_z[chamfer]=1.82 mm  best-of-16=1.22  z0=1.48  mean-limb=7.19  calib=0.76
+limb_0005.obj: E_z[chamfer]=1.45 mm  best-of-16=0.76  z0=1.13  mean-limb=6.15  calib=0.65
+limb_0006.obj: E_z[chamfer]=1.29 mm  best-of-16=0.88  z0=1.11  mean-limb=9.52  calib=0.94
+limb_0007.obj: E_z[chamfer]=1.98 mm  best-of-16=0.66  z0=1.75  mean-limb=3.63  calib=0.67
+limb_0008.obj: E_z[chamfer]=1.24 mm  best-of-16=0.41  z0=0.58  mean-limb=3.22  calib=0.54
+limb_0009.obj: E_z[chamfer]=1.18 mm  best-of-16=0.47  z0=0.61  mean-limb=5.51  calib=0.63
+limb_0010.obj: E_z[chamfer]=1.47 mm  best-of-16=0.70  z0=1.00  mean-limb=7.69  calib=0.75
+limb_0011.obj: E_z[chamfer]=1.53 mm  best-of-16=0.71  z0=0.94  mean-limb=5.40  calib=0.72
+limb_0012.obj: E_z[chamfer]=1.43 mm  best-of-16=0.85  z0=1.21  mean-limb=7.45  calib=0.72
+limb_0013.obj: E_z[chamfer]=0.69 mm  best-of-16=0.36  z0=0.63  mean-limb=7.31  calib=0.71
+limb_0014.obj: E_z[chamfer]=1.81 mm  best-of-16=0.71  z0=1.44  mean-limb=8.17  calib=0.64
+limb_0015.obj: E_z[chamfer]=1.42 mm  best-of-16=0.54  z0=0.65  mean-limb=8.36  calib=0.61
+limb_0016.obj: E_z[chamfer]=1.59 mm  best-of-16=0.61  z0=1.18  mean-limb=4.78  calib=0.72
+limb_0017.obj: E_z[chamfer]=1.24 mm  best-of-16=0.51  z0=0.75  mean-limb=9.29  calib=0.58
+limb_0018.obj: E_z[chamfer]=2.15 mm  best-of-16=0.53  z0=1.65  mean-limb=4.08  calib=0.66
+limb_0019.obj: E_z[chamfer]=0.87 mm  best-of-16=0.38  z0=0.46  mean-limb=9.05  calib=0.64
+
+=== Shape error vs ground truth, mm (20 meshes; stats over meshes) ===
+quantity            n    mean  median    std     p95     max
+-----------------  --  ------  ------  -----  ------  ------
+z0_chamfer         20   0.947   0.895  0.399   1.656   1.748
+z0_rmse            20   1.259   1.168  0.534   2.138   2.147
+z0_hausdorff       20   5.942   5.342  3.304  11.982  14.930
+z0_hd95            20   2.592   2.192  1.222   4.854   4.862
+z0_p2plane_mean    20   0.941   0.894  0.394   1.652   1.744
+z0_p2plane_rmse    20   1.246   1.157  0.523   2.134   2.143
+z0_p2plane_max     20   5.159   4.518  2.547   9.789  10.201
+mean_chamfer       20   1.379   1.394  0.354   1.971   2.121
+mean_rmse          20   1.810   1.858  0.458   2.510   2.699
+mean_hausdorff     20   8.332   8.367  2.383  12.541  13.276
+mean_hd95          20   3.764   3.893  1.064   5.669   5.990
+mean_p2plane_mean  20   1.367   1.367  0.349   1.956   2.107
+mean_p2plane_rmse  20   1.785   1.831  0.445   2.416   2.677
+mean_p2plane_max   20   7.341   7.215  2.035  10.316  11.628
+max_chamfer        20   2.375   2.184  0.718   3.331   4.253
+max_rmse           20   3.077   2.881  0.899   4.213   5.406
+max_hausdorff      20  15.486  15.248  4.269  22.867  24.680
+max_hd95           20   6.418   6.081  2.013  10.113  11.582
+max_p2plane_mean   20   2.345   2.152  0.701   3.253   4.198
+max_p2plane_rmse   20   3.023   2.812  0.869   4.095   5.295
+max_p2plane_max    20  13.571  13.482  4.068  20.701  21.992
+
+=== Distribution of the generated family (per-mesh statistics, see distribution_metrics) ===
+quantity                   n   mean  median    std    p95     max
+------------------------  --  -----  ------  -----  -----  ------
+expected_error            20  1.406   1.423  0.354  1.985   2.150
+expected_error_plausible  20  1.402   1.423  0.350  1.985   2.150
+error_std_over_z          20  0.461   0.414  0.182  0.820   0.866
+error_p05                 20  0.776   0.783  0.206  1.017   1.223
+error_p95                 20  2.092   2.009  0.576  3.028   3.324
+best_of_k                 20  0.628   0.640  0.210  0.894   1.222
+family_spread             20  3.572   3.582  0.552  4.483   4.529
+energy_score              20  0.576   0.571  0.225  0.875   1.009
+calibration_ratio         20  0.670   0.655  0.087  0.770   0.937
+skill_vs_mean_limb        20  0.762   0.796  0.132  0.904   0.905
+expected_meas_err_mm      20  0.373   0.353  0.079  0.514   0.594
+frac_plausible            20  0.991   1.000  0.041  1.000   1.000
+z0_error                  20  0.947   0.895  0.399  1.656   1.748
+mean_limb_error           20  6.954   7.381  2.161  9.944  10.352
+n_measures_out_of_range   20  0.000   0.000  0.000  0.000   0.000
+
+=== Measurement fidelity of generated limbs (exact corrected measurement vs requested), mm ===
+quantity                 n   mean  median    std    p95    max
+----------------------  --  -----  ------  -----  -----  -----
+Circ 1 (z0 err mm)      20  0.511   0.556  0.288  0.975  1.006
+Circ 2 (z0 err mm)      20  0.309   0.244  0.219  0.679  0.796
+Circ 3 (z0 err mm)      20  0.317   0.250  0.223  0.672  0.800
+Circ 4 (z0 err mm)      20  0.418   0.398  0.319  0.967  0.967
+Length 1 (z0 err mm)    20  0.294   0.284  0.261  0.759  1.059
+Width 1 (z0 err mm)     20  0.201   0.174  0.159  0.462  0.597
+Width 2 (z0 err mm)     20  0.177   0.100  0.199  0.439  0.904
+Circ 1 (mean err mm)    20  0.461   0.441  0.140  0.673  0.779
+Circ 2 (mean err mm)    20  0.402   0.398  0.088  0.565  0.604
+Circ 3 (mean err mm)    20  0.418   0.396  0.124  0.591  0.700
+Circ 4 (mean err mm)    20  0.517   0.485  0.146  0.781  0.843
+Length 1 (mean err mm)  20  0.362   0.328  0.150  0.522  0.849
+Width 1 (mean err mm)   20  0.218   0.206  0.103  0.399  0.485
+Width 2 (mean err mm)   20  0.232   0.201  0.105  0.429  0.489
+
+=== Mesh-derived measurements vs reference_measurements in the annotation, mm ===
+quantity                                n   mean  median    std    p95    max
+-------------------------------------  --  -----  ------  -----  -----  -----
+annotation-vs-reference Circ 1 (mm)    20  0.000   0.000  0.000  0.000  0.000
+annotation-vs-reference Circ 2 (mm)    20  0.000   0.000  0.000  0.000  0.000
+annotation-vs-reference Circ 3 (mm)    20  0.000   0.000  0.000  0.000  0.000
+annotation-vs-reference Circ 4 (mm)    20  0.000   0.000  0.000  0.000  0.000
+annotation-vs-reference Length 1 (mm)  20  0.000   0.000  0.000  0.000  0.000
+annotation-vs-reference Width 1 (mm)   20  0.000   0.000  0.000  0.000  0.000
+annotation-vs-reference Width 2 (mm)   20  0.000   0.000  0.000  0.000  0.000

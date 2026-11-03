@@ -1,7 +1,8 @@
 """Generate a family of plausible limbs from measurements using a trained CVAE.
 
-    python claude/generate.py ckpt=<path/to/best.ckpt> measurements=[300,290,280,270,120,110,115] n_samples=32
-    python claude/generate.py ckpt=<...> test_index=3 save_meshes=true
+    python claude/data/generate.py ckpt=<path/to/best.ckpt> measurements=[300,290,280,270,120,110,115] n_samples=32
+    python claude/data/generate.py ckpt=<...> test_index=3 save_meshes=true
+    python claude/data/generate.py ckpt=<dropout ckpt> measurements=[300,null,280,null,120,110,null]   # null = unknown
 
 Writes components.npy (n, 11) [10 SSM components + scale], measurements_check.json comparing the
 requested measurements with the *exact* SSM_Driver measurements of the generated limbs, and
@@ -11,8 +12,8 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from openlimb_cvae.common import register_resolvers, setup_env  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import register_resolvers, setup_env  # noqa: E402
 
 setup_env()
 register_resolvers()
@@ -23,9 +24,9 @@ import torch  # noqa: E402
 from hydra.core.hydra_config import HydraConfig  # noqa: E402
 from omegaconf import DictConfig  # noqa: E402
 
-from openlimb_cvae.data import LimbDataModule  # noqa: E402
-from openlimb_cvae.geometry import load_shape_model  # noqa: E402
-from openlimb_cvae.lit_cvae import LimbCVAE  # noqa: E402
+from data.datamodule import LimbDataModule  # noqa: E402
+from data.geometry import load_shape_model  # noqa: E402
+from models import load_model  # noqa: E402
 
 
 def write_obj(path, verts, faces):
@@ -34,10 +35,10 @@ def write_obj(path, verts, faces):
         f.writelines(f"f {a + 1} {b + 1} {c + 1}\n" for a, b, c in faces)
 
 
-@hydra.main(config_path="conf", config_name="generate", version_base="1.3")
+@hydra.main(config_path="../conf", config_name="generate", version_base="1.3")
 def main(cfg: DictConfig):
     torch.manual_seed(cfg.seed)
-    model = LimbCVAE.load_from_checkpoint(cfg.ckpt, map_location="cpu").eval()
+    model = load_model(cfg.ckpt)
     scale = model.hparams.scale
 
     if cfg.test_index is not None:
@@ -46,7 +47,7 @@ def main(cfg: DictConfig):
         m_norm = dm.fixed["test"]["m"][cfg.test_index]
         target = (m_norm * model.meas_std + model.meas_mean)
     elif cfg.measurements is not None:
-        target = torch.tensor(list(cfg.measurements), dtype=torch.float32)
+        target = torch.tensor([float("nan") if v is None else v for v in cfg.measurements], dtype=torch.float32)
     else:
         raise ValueError("provide `measurements=[...]` or `test_index=N`")
 
@@ -56,8 +57,8 @@ def main(cfg: DictConfig):
     np.save(out / "components.npy", comps.numpy())
 
     # exact check of how well the family honours the requested measurements
-    from openlimb_cvae.geometry import SSMGeometry
-    achieved = SSMGeometry(scale=scale, normalise=False).get_measures(comps.double()).float()
+    from data.geometry import SSMGeometry
+    achieved = SSMGeometry(scale=scale, normalise=False).get_measures(comps.double()).float()   # NaN target = not requested
     names = [d["name"] for d in SSMGeometry(scale=scale).measurement_details]
     report = {n: {"target": target[i].item(), "mean": achieved[:, i].mean().item(),
                   "std": achieved[:, i].std().item(), "max_abs_err": (achieved[:, i] - target[i]).abs().max().item()}

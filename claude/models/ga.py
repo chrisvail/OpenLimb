@@ -13,8 +13,8 @@ import numpy as np
 import pygad
 import torch
 
-from .fast_measure import BoxMap, FastMeasure
-from .geometry import load_transforms
+from data.fast_measure import BoxMap, FastMeasure
+from data.geometry import load_transforms
 
 N_GENES = 11
 
