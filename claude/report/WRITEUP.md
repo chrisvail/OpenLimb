@@ -128,7 +128,7 @@ Total loss = weighted sum, all on standardised values:
 
 | term | what it asks for | weight |
 |---|---|---|
-| reconstruction | rebuilt limb (encoded code) ≈ true limb | 1 |
+| reconstruction (MSE) | rebuilt limb (encoded code) ≈ true limb | 1 |
 | KL | encoder's codes look like N(0, I) | 0.01 (ramped over 20 epochs) |
 | encoded-code measurement | rebuilt limb has the right measurements (surrogate) | 1 |
 | random-code measurement | random-code limbs have the right measurements (surrogate) | 1 |

@@ -12,7 +12,6 @@ import time
 import numpy as np
 import pygad
 import torch
-
 from data.fast_measure import BoxMap, FastMeasure
 from data.geometry import load_transforms
 
@@ -206,7 +205,7 @@ def run(pool, variant, targets, seeds, starts=None, **kw):
     out = {}
     for i, res in pool.imap_unordered(_work, jobs, chunksize=1):
         for st, (raw, ev, sec) in res.items():
-            d = out.setdefault(st, dict(raw=np.zeros((len(jobs), N_GENES)), evals=np.zeros(len(jobs), int),
-                                        secs=np.zeros(len(jobs))))
+            d = out.setdefault(st, {"raw": np.zeros((len(jobs), N_GENES)), "evals": np.zeros(len(jobs), int),
+                                        "secs": np.zeros(len(jobs))})
             d["raw"][i], d["evals"][i], d["secs"][i] = raw, ev, sec
     return out

@@ -3,8 +3,8 @@ import math
 import lightning as L
 import torch
 import torch.nn.functional as F
-
 from data.geometry import load_shape_model, load_transforms, plausibility_affine
+
 from .networks import Decoder, Encoder, MeasurementSurrogate
 
 
@@ -176,8 +176,8 @@ class LimbCVAE(L.LightningModule):
         else:
             z, kl_loss, kl = None, m.new_zeros(()), m.new_zeros(())
         c_hat = self.decode(m_in, z, mask)
-        out = dict(kl=kl, kl_loss=kl_loss, recon=F.mse_loss(c_hat, c),
-                   meas=self._masked_mse(self.surrogate(c_hat), m_in, mask))
+        out = {"kl": kl, "kl_loss": kl_loss, "recon": F.mse_loss(c_hat, c),
+                   "meas": self._masked_mse(self.surrogate(c_hat), m_in, mask)}
         out["vert"] = F.mse_loss(self.verts(c_hat), self.verts(c)) / self.vert_var if hp.w_vert > 0 else m.new_zeros(())
         # generative path: z from the prior, no ground truth, only "honour the observed m and stay plausible"
         z_p = torch.randn(len(m), hp.z_dim, device=m.device) if hp.z_dim > 0 else None

@@ -3,8 +3,8 @@ import math
 import lightning as L
 import torch
 import torch.nn.functional as F
-
 from data.geometry import load_transforms, plausibility_affine
+
 from .networks import MLP, MeasurementSurrogate
 
 
