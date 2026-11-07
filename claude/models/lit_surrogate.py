@@ -12,23 +12,27 @@ class LitSurrogate(L.LightningModule):
     def __init__(self, n_components, n_measurements, scale=True, width=256, depth=3, lr=2e-3, weight_decay=1e-5):
         super().__init__()
         self.save_hyperparameters()
-        self.net = MeasurementSurrogate(n_components, n_measurements, width, depth)
+        self.net = MeasurementSurrogate(
+            n_components, n_measurements, width, depth)
         self.register_buffer("meas_std", load_transforms(scale)[1][1].float())
 
     def forward(self, c):
         return self.net(c)
 
     def _step(self, batch, name):
-        m, c = batch["m"], batch["c"]
-        pred = self(c)
-        loss = F.mse_loss(pred, m)
-        self.log(f"{name}/mse", loss, prog_bar=True, batch_size=len(m))
+        measurements, components = batch["m"], batch["c"]
+        batch_size = len(measurements)
+        pred = self(components)
+        loss = F.mse_loss(pred, measurements)
+
+        self.log(f"{name}/mse", loss, prog_bar=True,
+                 batch_size=len(measurements))
         # mean absolute error in physical units (mm, or size-normalised units if scale=False)
-        mae = ((pred - m).abs() * self.meas_std).mean(0)
-        self.log(f"{name}/mae", mae.mean(), batch_size=len(m))
+        mae = ((pred.detach - measurements).abs() * self.meas_std).mean(0)
+        self.log(f"{name}/mae", mae.mean(), batch_size=batch_size)
         if name != "train":
             for i, v in enumerate(mae):
-                self.log(f"{name}/mae_{i}", v, batch_size=len(m))
+                self.log(f"{name}/mae_{i}", v, batch_size=batch_size)
         return loss
 
     def training_step(self, batch, _):
@@ -41,7 +45,8 @@ class LitSurrogate(L.LightningModule):
         self._step(batch, "test")
 
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay)
+        opt = torch.optim.AdamW(
+            self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay)
         sched = torch.optim.lr_scheduler.OneCycleLR(
             opt, max_lr=self.hparams.lr, total_steps=self.trainer.estimated_stepping_batches)
         return {"optimizer": opt, "lr_scheduler": {"scheduler": sched, "interval": "step"}}

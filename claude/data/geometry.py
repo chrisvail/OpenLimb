@@ -45,23 +45,29 @@ class SSMGeometry(nn.Module):
             self.dtype = dtype
             self.measurement_details = SSM_Driver.measurement_details
             # NOT SSM_Driver.measure: its `0 < t < 1` test drops the faces touching the plane's vertex (see measure_fixed.py)
-            from .measure_fixed import FixedMeasurements
+            from .measure import Measure
 
-            self.measure = FixedMeasurements(SSM_Driver.edge2vert.long(), SSM_Driver.face2edge.long(),
-                                             self.measurement_details)
+            self.measure = Measure(SSM_Driver.edge2vert.long(), SSM_Driver.face2edge.long(),
+                                   self.measurement_details)
 
-            raw = torch.load(d / "vert_components.pt").to(dtype)          # (10, 3V)
-            mean = torch.load(d / "mean_verts.pt").to(dtype)              # (V, 3)
-            vmap = torch.load(d / "vert_mapping.pt")                      # (Vm,)
+            # (10, 3V)
+            raw = torch.load(d / "vert_components.pt").to(dtype)
+            mean = torch.load(
+                d / "mean_verts.pt").to(dtype)              # (V, 3)
+            # (Vm,)
+            vmap = torch.load(d / "vert_mapping.pt")
             V = mean.shape[0]
             # Pre-select the mapped vertices so only (10, Vm*3) is ever multiplied.
-            self.register_buffer("comp_basis", raw.reshape(raw.shape[0], V, 3)[:, vmap].reshape(raw.shape[0], -1))
+            self.register_buffer("comp_basis", raw.reshape(raw.shape[0], V, 3)[
+                                 :, vmap].reshape(raw.shape[0], -1))
             self.register_buffer("mean_verts", mean[vmap])
             self.n_modes = raw.shape[0]
 
             prefix = "" if self.scale else "un"
-            self.register_buffer("comp_tf", torch.load(d / f"{prefix}scaled_component_transforms.pt").to(dtype))
-            self.register_buffer("meas_tf", torch.load(d / f"{prefix}scaled_measurement_transforms.pt").to(dtype))
+            self.register_buffer("comp_tf", torch.load(
+                d / f"{prefix}scaled_component_transforms.pt").to(dtype))
+            self.register_buffer("meas_tf", torch.load(
+                d / f"{prefix}scaled_measurement_transforms.pt").to(dtype))
 
         # Borrow the reference implementation for measurement + normalisation.
         ref = object.__new__(LegMeasurementDataset)
@@ -84,7 +90,8 @@ class SSMGeometry(nn.Module):
             c, s = components[:, :-1], components[:, -1:]
         else:
             c, s = components, torch.ones_like(components[:, :1])
-        verts = self.mean_verts[None] + (c @ self.comp_basis).reshape(-1, *self.mean_verts.shape)
+        verts = self.mean_verts[None] + \
+            (c @ self.comp_basis).reshape(-1, *self.mean_verts.shape)
         return verts * s[..., None]
 
     def get_measures(self, components, normalise=None):
@@ -122,8 +129,10 @@ def load_transforms(scale: bool):
     """(comp_tf, meas_tf), each (2, D): row 0 = mean, row 1 = std. Mirrors the dataset."""
     n = 10 + int(scale)
     prefix = "" if scale else "un"
-    comp = torch.load(DATA_DIR / "scaled_component_transforms.pt")[:, :n].double()
-    meas = torch.load(DATA_DIR / f"{prefix}scaled_measurement_transforms.pt").double()
+    comp = torch.load(
+        DATA_DIR / "scaled_component_transforms.pt")[:, :n].double()
+    meas = torch.load(
+        DATA_DIR / f"{prefix}scaled_measurement_transforms.pt").double()
     return comp, meas
 
 
@@ -147,7 +156,8 @@ def plausibility_affine(scale: bool):
     import numpy as np
 
     lr = np.load(CLAUDE_DATA / "lr_map.npz")
-    A, b = torch.tensor(lr["coef"]).double(), torch.tensor(lr["intercept"]).double()
+    A, b = torch.tensor(lr["coef"]).double(
+    ), torch.tensor(lr["intercept"]).double()
     comp_tf, _ = load_transforms(scale)
     lo, hi = torch.tensor(SKIN_MIN).double(), torch.tensor(SKIN_MAX).double()
     n = comp_tf.shape[1]
@@ -177,15 +187,19 @@ class ComponentSampler:
         lr = np.load(CLAUDE_DATA / "lr_map.npz")
         self.A = torch.tensor(lr["coef"]).double()
         self.b = torch.tensor(lr["intercept"]).double()
-        self.lo, self.hi = torch.tensor(SKIN_MIN).double(), torch.tensor(SKIN_MAX).double()
+        self.lo, self.hi = torch.tensor(
+            SKIN_MIN).double(), torch.tensor(SKIN_MAX).double()
         self.scale = bool(scale)
         self.comp_tf, _ = load_transforms(scale)
 
     def raw(self, n, generator=None):
-        s = self.lo + torch.rand(n, 10, generator=generator, dtype=torch.float64) * (self.hi - self.lo)
+        s = self.lo + torch.rand(n, 10, generator=generator,
+                                 dtype=torch.float64) * (self.hi - self.lo)
         c = s @ self.A.T + self.b
         if self.scale:
-            sc = SCALE_MIN + torch.rand(n, 1, generator=generator, dtype=torch.float64) * (SCALE_MAX - SCALE_MIN)
+            sc = SCALE_MIN + \
+                torch.rand(n, 1, generator=generator,
+                           dtype=torch.float64) * (SCALE_MAX - SCALE_MIN)
             c = torch.cat([c, sc], -1)
         return c
 

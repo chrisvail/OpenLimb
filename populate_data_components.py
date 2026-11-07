@@ -13,18 +13,18 @@ LR.pkl. The coefficients are read from an .npz (keys `coef` (n_out, n_in), `inte
 Unpickling runs code from the file, so only pass it if you trust the OpenLimbTT repository.
 
 Files written (and the notebook each one originally came from):
-    mean_verts.pt                       (V, 3)   OpenLimbTT mean limb shape, raw (un-merged) STL vertex order
-    vert_components.pt                  (M, 3V)  OpenLimbTT modes
-        ^ both were dumped from GenerateRandomLimbs.py inside the docker image
+    mesh.pt                             dict     the skin-only mesh, everything indexed by the same Vs skin verts:
+                                                 mean_verts (Vs, 3)        OpenLimbTT mean limb shape
+                                                 vert_components (M, 3Vs)  OpenLimbTT modes
+                                                   (mean and modes were dumped from GenerateRandomLimbs.py inside
+                                                    the docker image, then restricted to the skin verts)
+                                                 faces (Fs, 3)             skin faces (measure_limbs.ipynb)
+                                                 selected_verts (8,)       nearest vert to each point in verts.txt
+                                                                           (SSM_Driver.ipynb)
     component_range.pt                  dict     skin_min, skin_max (S,): sampling box of the skin-only modes;
                                                  scale_min, scale_max (): tibia-length range of the scale factor
     lr_map.pt                           dict     coef (M, S), intercept (M,): skin -> full-model linear regression,
                                                  full = skin @ coef.T + intercept
-    vert_mapping.pt                     (Vs,)    measure_limbs.ipynb  - indices of the skin (boneless) verts
-    face2vert.pt                        (Fs, 3)  measure_limbs.ipynb  - skin faces, indexing the mapped verts
-    selected_verts.pt                   (8,)     SSM_Driver.ipynb     - nearest mapped vert to each point in verts.txt
-    scaled_component_transforms.pt      (2, M+1) component_exploration.ipynb  - [mean; std] of generated components
-    unscaled_component_transforms.pt    (2, M+1)
     scaled_measurement_transforms.pt    (2, 7)   component_exploration.ipynb  - [mean; std] of their measurements
     unscaled_measurement_transforms.pt  (2, 7)
     ssm_version.txt                              which release the files above came from
@@ -204,16 +204,15 @@ def get_measurement_details(vert_idxs, dtype):
     )
 
 
-def get_verts(components, mean_verts, raw_components, vert_mapping):
+def get_verts(components, mean_verts, raw_components):
     """LegMeasurementDataset.get_verts as a matmul (the original broadcast needs ~25 GB for 1024 limbs)."""
     components, scale = components[:, :-1], components[:, -1:]
     verts = mean_verts[None] + (components @ raw_components).reshape(-1, *mean_verts.shape)
-    return verts[:, vert_mapping] * scale[..., None]
+    return verts * scale[..., None]
 
 
-def measure_all(components, measure, mean_verts, raw_components, vert_mapping, chunk=128):
-    return torch.cat([measure(get_verts(c, mean_verts, raw_components, vert_mapping))
-                      for c in components.split(chunk)])
+def measure_all(components, measure, mean_verts, raw_components, chunk=128):
+    return torch.cat([measure(get_verts(c, mean_verts, raw_components)) for c in components.split(chunk)])
 
 
 def mean_std(x):
@@ -262,16 +261,14 @@ def main():
     # SSM: igl (like ampscan with unify=False) keeps the raw STL order the modes are defined in
     verts_bones, _ = igl.read_triangle_mesh(str(ssm / version["limb"]))
     verts_boneless, face2vert_boneless = igl.read_triangle_mesh(str(ssm / version["skin"]))
-    mean_verts = torch.tensor(verts_bones, dtype=dtype)
+    raw_mean_verts = torch.tensor(verts_bones, dtype=dtype)
     raw_components = torch.tensor(np.load(ssm / version["modes"]), dtype=dtype)
     if version["modes_transposed"]:
         raw_components = raw_components.T.contiguous()
-    assert raw_components.shape[1] == mean_verts.numel()
+    assert raw_components.shape[1] == raw_mean_verts.numel()
     if coef.shape[0] != raw_components.shape[0]:
         raise ValueError(f"regression predicts {coef.shape[0]} modes, {version['modes']} has {raw_components.shape[0]}")
     (args.out / "ssm_version.txt").write_text(f"{args.version}\n")
-    save(mean_verts, "mean_verts.pt")
-    save(raw_components, "vert_components.pt")
 
     # Generator sampling box and skin -> full-model linear regression (full = skin @ coef.T + intercept)
     save_dict({
@@ -283,29 +280,27 @@ def main():
     save_dict({"coef": torch.tensor(coef, dtype=dtype), "intercept": torch.tensor(intercept, dtype=dtype)},
               "lr_map.pt")
 
-    # measure_limbs.ipynb
-    vert_mapping, face2vert = boneless_mapping(verts_bones, verts_boneless, face2vert_boneless)
-    save(vert_mapping, "vert_mapping.pt")
-    save(face2vert, "face2vert.pt")
+    # measure_limbs.ipynb: restrict the mean and modes to the skin verts once, here, so nothing downstream maps
+    vert_mapping, faces = boneless_mapping(verts_bones, verts_boneless, face2vert_boneless)
+    mean_verts = raw_mean_verts[vert_mapping]
+    raw_components = raw_components.reshape(-1, len(raw_mean_verts), 3)[:, vert_mapping].reshape(
+        raw_components.shape[0], -1)
 
     # SSM_Driver.ipynb (originally snapped onto meshes/limb_00000.stl; the mean shape is used here)
-    vert_idxs = select_verts(mean_verts[vert_mapping])
-    save(vert_idxs, "selected_verts.pt")
+    vert_idxs = select_verts(mean_verts)
+    save_dict({"mean_verts": mean_verts, "vert_components": raw_components, "faces": faces,
+               "selected_verts": vert_idxs}, "mesh.pt")
 
     # component_exploration.ipynb: both runs used the generator's default seed, so share shape components
     unscaled = generate_components(args.batch_size, False, args.version, coef, intercept, seed=args.seed)
     scaled = generate_components(args.batch_size, True, args.version, coef, intercept, seed=args.seed)
-    summarize_tensor(unscaled, "unscaled")
-    summarize_tensor(scaled, "scaled")
-    save(mean_std(scaled), "scaled_component_transforms.pt")
-    save(mean_std(unscaled), "unscaled_component_transforms.pt")
 
-    edge2vert, face2edge, _ = igl.edge_topology(mean_verts.numpy(), face2vert.numpy())
+    edge2vert, face2edge, _ = igl.edge_topology(mean_verts.numpy(), faces.numpy())
     measure = Measurements(torch.from_numpy(edge2vert), torch.from_numpy(face2edge),
                            get_measurement_details(vert_idxs, dtype))
     with torch.no_grad():
-        scaled_measures = measure_all(scaled, measure, mean_verts, raw_components, vert_mapping)
-        unscaled_measures = measure_all(unscaled, measure, mean_verts, raw_components, vert_mapping)
+        scaled_measures = measure_all(scaled, measure, mean_verts, raw_components)
+        unscaled_measures = measure_all(unscaled, measure, mean_verts, raw_components)
     summarize_tensor(unscaled_measures, "Unscaled Measures")
     summarize_tensor(scaled_measures, "Scaled Measures")
     save(mean_std(scaled_measures), "scaled_measurement_transforms.pt")

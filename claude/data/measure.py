@@ -19,7 +19,8 @@ from torch import nn
 
 def _sides(verts, plane_point, plane_normal):
     """verts (B,V,3) -> signed distance (B,V)."""
-    p = verts[:, plane_point].unsqueeze(1) if torch.is_tensor(plane_point) or isinstance(plane_point, int) else plane_point
+    p = verts[:, plane_point].unsqueeze(1) if torch.is_tensor(
+        plane_point) or isinstance(plane_point, int) else plane_point
     return torch.einsum("bvi,i->bv", verts - p, plane_normal.reshape(-1).to(verts.dtype))
 
 
@@ -27,7 +28,8 @@ def _cut_points(verts, edge2vert, d):
     a, b = edge2vert[:, 0], edge2vert[:, 1]
     da, db = d[:, a], d[:, b]
     cut = (da >= 0) != (db >= 0)
-    t = torch.where(cut, da / (da - db).where(cut, torch.ones_like(da)), torch.zeros_like(da))
+    t = torch.where(cut, da / (da - db).where(cut,
+                    torch.ones_like(da)), torch.zeros_like(da))
     pts = verts[:, a] + t.unsqueeze(-1) * (verts[:, b] - verts[:, a])
     return cut, pts
 
@@ -35,7 +37,8 @@ def _cut_points(verts, edge2vert, d):
 def circumference(verts, edge2vert, face2edge, plane_point, plane_normal):
     d = _sides(verts, plane_point, plane_normal)
     cut, pts = _cut_points(verts, edge2vert, d)
-    fc, fp = cut[:, face2edge], pts[:, face2edge]                 # (B,F,3), (B,F,3,3)
+    # (B,F,3), (B,F,3,3)
+    fc, fp = cut[:, face2edge], pts[:, face2edge]
     total = 0
     for i, j in ((0, 1), (2, 1), (0, 2)):
         seg = torch.linalg.norm(fp[:, :, i] - fp[:, :, j], dim=-1)
@@ -46,18 +49,32 @@ def circumference(verts, edge2vert, face2edge, plane_point, plane_normal):
 def width(verts, edge2vert, plane_point, plane_normal, plane_direction):
     d = _sides(verts, plane_point, plane_normal)
     cut, pts = _cut_points(verts, edge2vert, d)
-    v = torch.einsum("bei,i->be", pts, plane_direction.reshape(-1).to(verts.dtype))
+    v = torch.einsum("bei,i->be", pts,
+                     plane_direction.reshape(-1).to(verts.dtype))
     inf = torch.full_like(v, float("inf"))
-    hi, lo = torch.where(cut, v, -inf).max(1).values, torch.where(cut, v, inf).min(1).values
+    hi, lo = torch.where(
+        cut, v, -inf).max(1).values, torch.where(cut, v, inf).min(1).values
     return torch.where(cut.any(1), hi - lo, torch.zeros_like(hi))
 
 
-class FixedMeasurements(nn.Module):
+def measure_length(verts, v1, v2, direction):
+    # print(f"Length:        {verts.shape=}    {v1}    {v2}    {direction.shape=}")
+
+    if len(verts.shape) == 2:
+        verts = verts[None]
+
+    if isinstance(direction, (tuple, list)):
+        direction = verts[direction[0]] - verts[direction[1]]
+        direction /= torch.linalg.norm(direction)
+
+    return torch.abs(torch.einsum("ij, ij -> i", verts[:, v1] - verts[:, v2], direction))
+
+
+class Measure(nn.Module):
     """Same interface / details as SSM_Driver.Measurements."""
 
     def __init__(self, edge2vert, face2edge, details):
         super().__init__()
-        import measure_limbs  # repo root (on sys.path via geometry._in_root)
 
         self.details = details
         self.measures = []
@@ -69,7 +86,8 @@ class FixedMeasurements(nn.Module):
                 self.measures.append(lambda v, dt=dt: width(
                     v, edge2vert, dt["plane_point"], dt["plane_normal"], dt["plane_direction"]))
             else:
-                self.measures.append(lambda v, dt=dt: measure_limbs.measure_length(v, dt["v1"], dt["v2"], dt["direction"]))
+                self.measures.append(lambda v, dt=dt: measure_length(
+                    v, dt["v1"], dt["v2"], dt["direction"]))
 
     def forward(self, x, verbose=False):
         if x.dim() == 2:                       # a single limb (LegMeasurementDataset.get_verts squeezes the batch)
