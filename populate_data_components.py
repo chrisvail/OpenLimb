@@ -25,8 +25,8 @@ Files written (and the notebook each one originally came from):
                                                  scale_min, scale_max (): tibia-length range of the scale factor
     lr_map.pt                           dict     coef (M, S), intercept (M,): skin -> full-model linear regression,
                                                  full = skin @ coef.T + intercept
-    scaled_measurement_transforms.pt    (2, 7)   component_exploration.ipynb  - [mean; std] of their measurements
-    unscaled_measurement_transforms.pt  (2, 7)
+    scaled_measurement_transforms.pt    dict     component_exploration.ipynb  - mean (7,), std (7,) of their measurements
+    unscaled_measurement_transforms.pt  dict
     ssm_version.txt                              which release the files above came from
 
 The OpenLimbTT repository (the one the dockerfile clones) is cloned to --openlimbtt if it is not there.
@@ -36,17 +36,17 @@ verts.txt was picked in 2023-06 coordinates; other releases are aligned/cut diff
 """
 import argparse
 import subprocess
-from functools import partial
+import sys
 from pathlib import Path
 
 import igl
 import numpy as np
 import torch
-from torch import nn
-
-import measure_limbs
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / "revised" / "src"))
+from geometry.measure import Measure  # noqa: E402
+
 OPENLIMBTT_URL = "https://github.com/abel-research/OpenLimbTT.git"
 CLAUDE_DATA = ROOT / "claude" / "data"
 
@@ -166,30 +166,6 @@ def select_verts(mapped_verts, path=ROOT / "verts.txt"):
 # ---------------------------------------------------------------------------------
 # component_exploration.ipynb / SSM_Driver.ipynb: measurements
 # ---------------------------------------------------------------------------------
-class Measurements(nn.Module):
-    def __init__(self, edge2vert, face2edge, details):
-        super().__init__()
-        self.details = details
-        self.measures = []
-        for detail in details:
-            match detail["type"]:
-                case "width":
-                    measure = partial(measure_limbs.measure_width, edge2vert=edge2vert,
-                                      plane_point=detail["plane_point"], plane_normal=detail["plane_normal"],
-                                      plane_direction=detail["plane_direction"])
-                case "length":
-                    measure = partial(measure_limbs.measure_length,
-                                      v1=detail["v1"], v2=detail["v2"], direction=detail["direction"])
-                case "circumference":
-                    measure = partial(measure_limbs.measure_planar_circumference, edge2vert=edge2vert,
-                                      face2edge=face2edge, plane_point=detail["plane_point"],
-                                      plane_normal=detail["plane_normal"])
-            self.measures.append(measure)
-
-    def forward(self, x):
-        return torch.stack([measure(x) for measure in self.measures], dim=-1)
-
-
 def get_measurement_details(vert_idxs, dtype):
     z = torch.tensor([[0, 0, 1]], dtype=dtype)
     x = torch.tensor([[1, 0, 0]], dtype=dtype)
@@ -216,7 +192,7 @@ def measure_all(components, measure, mean_verts, raw_components, chunk=128):
 
 
 def mean_std(x):
-    return torch.vstack([torch.mean(x, dim=0, keepdim=True), torch.std(x, dim=0, keepdim=True)])
+    return {"mean": x.mean(0), "std": x.std(0)}
 
 
 def summarize_tensor(tensor, name):
@@ -249,10 +225,6 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     if args.version != "2023-06":
         print(f"WARNING: {args.version} is not the release the rest of this repository was built for (2023-06)")
-
-    def save(obj, name):
-        torch.save(obj, args.out / name)
-        print(f"saved {name:38s} {tuple(obj.shape)}  {obj.dtype}")
 
     def save_dict(obj, name):
         torch.save(obj, args.out / name)
@@ -296,15 +268,15 @@ def main():
     scaled = generate_components(args.batch_size, True, args.version, coef, intercept, seed=args.seed)
 
     edge2vert, face2edge, _ = igl.edge_topology(mean_verts.numpy(), faces.numpy())
-    measure = Measurements(torch.from_numpy(edge2vert), torch.from_numpy(face2edge),
-                           get_measurement_details(vert_idxs, dtype))
+    measure = Measure(torch.from_numpy(edge2vert), torch.from_numpy(face2edge),
+                      get_measurement_details(vert_idxs, dtype))
     with torch.no_grad():
         scaled_measures = measure_all(scaled, measure, mean_verts, raw_components)
         unscaled_measures = measure_all(unscaled, measure, mean_verts, raw_components)
     summarize_tensor(unscaled_measures, "Unscaled Measures")
     summarize_tensor(scaled_measures, "Scaled Measures")
-    save(mean_std(scaled_measures), "scaled_measurement_transforms.pt")
-    save(mean_std(unscaled_measures), "unscaled_measurement_transforms.pt")
+    save_dict(mean_std(scaled_measures), "scaled_measurement_transforms.pt")
+    save_dict(mean_std(unscaled_measures), "unscaled_measurement_transforms.pt")
 
 
 if __name__ == "__main__":

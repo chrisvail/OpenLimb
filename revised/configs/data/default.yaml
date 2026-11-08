@@ -1,0 +1,12 @@
+_target: revised.geometry.limb.LimbDataModule
+data_dir: ${hydra:runtime.cwd}/data_components
+batch_size: 512
+train_batches: ${trainer.max_steps}
+val_batches: 4
+test_batches: 16
+seed: 2441
+val_seed: 9001
+test_seed: 7393
+num_workers: 0
+normalise_components: true
+normalise_measurements: true

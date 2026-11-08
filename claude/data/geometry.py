@@ -66,7 +66,7 @@ class SSMGeometry(nn.Module):
             prefix = "" if self.scale else "un"
             self.register_buffer("comp_tf", torch.load(
                 d / f"{prefix}scaled_component_transforms.pt").to(dtype))
-            self.register_buffer("meas_tf", torch.load(
+            self.register_buffer("meas_tf", _load_measurement_transforms(
                 d / f"{prefix}scaled_measurement_transforms.pt").to(dtype))
 
         # Borrow the reference implementation for measurement + normalisation.
@@ -125,13 +125,19 @@ SKIN_MAX = [25.4537448635005, 10.06971435469401, 4.12168595787859, 4.24308399616
 SCALE_MIN, SCALE_MAX = 342.8, 439.8
 
 
+def _load_measurement_transforms(path):
+    """The {"mean", "std"} dict saved by populate_data_components.py as a (2, D) tensor."""
+    tf = torch.load(path)
+    return torch.stack([tf["mean"], tf["std"]])
+
+
 def load_transforms(scale: bool):
     """(comp_tf, meas_tf), each (2, D): row 0 = mean, row 1 = std. Mirrors the dataset."""
     n = 10 + int(scale)
     prefix = "" if scale else "un"
     comp = torch.load(
         DATA_DIR / "scaled_component_transforms.pt")[:, :n].double()
-    meas = torch.load(
+    meas = _load_measurement_transforms(
         DATA_DIR / f"{prefix}scaled_measurement_transforms.pt").double()
     return comp, meas
 

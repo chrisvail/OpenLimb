@@ -28,7 +28,7 @@ class LitSurrogate(L.LightningModule):
         self.log(f"{name}/mse", loss, prog_bar=True,
                  batch_size=len(measurements))
         # mean absolute error in physical units (mm, or size-normalised units if scale=False)
-        mae = ((pred.detach - measurements).abs() * self.meas_std).mean(0)
+        mae = ((pred.detach() - measurements).abs() * self.meas_std).mean(0)
         self.log(f"{name}/mae", mae.mean(), batch_size=batch_size)
         if name != "train":
             for i, v in enumerate(mae):

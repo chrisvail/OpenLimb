@@ -64,7 +64,8 @@ class LegMeasurementDataset(torch.utils.data.Dataset):
         self.face2vert = torch.load("./data_components/face2vert.pt").to(device)
         self.vert_mapping = torch.load("./data_components/vert_mapping.pt").to(device)
         self.component_transforms = torch.load(f"./data_components/{'' if self.scale else 'un'}scaled_component_transforms.pt").to(dtype).to(device)
-        self.measurement_transforms = torch.load(f"./data_components/{'' if self.scale else 'un'}scaled_measurement_transforms.pt").to(dtype).to(device)
+        measurement_transforms = torch.load(f"./data_components/{'' if self.scale else 'un'}scaled_measurement_transforms.pt")
+        self.measurement_transforms = torch.stack([measurement_transforms["mean"], measurement_transforms["std"]]).to(dtype).to(device)
 
         # Remove all .npy files from the specified path
         for file in os.listdir(self.path):

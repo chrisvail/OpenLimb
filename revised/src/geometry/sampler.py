@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import igl
 import torch
 
 
@@ -19,6 +20,7 @@ class OpenLimbSampler:
         self.intercepts = lr["intercept"].double()
 
         self.n_modes = self.intercepts.shape[0]
+        self.n_components = self.n_modes + int(self.scale)
 
         self._setup_component_stats(data_dir)
         self._setup_mesh_components(data_dir)
@@ -47,6 +49,11 @@ class OpenLimbSampler:
         self.mode_basis = mesh["vert_components"].double()
         self.faces = mesh["faces"]
         self.selected_verts = mesh["selected_verts"]
+
+        edge2vert_np, face2edge_np, _ = igl.edge_topology(
+            self.mean_verts.cpu().numpy(), self.faces.cpu().numpy())
+        self.edge2vert, self.face2edge = torch.tensor(
+            edge2vert_np, dtype=self.faces.dtype), torch.tensor(face2edge_np, dtype=self.faces.dtype)
 
     def sample(self, batch_size=None):
         if batch_size is None:
