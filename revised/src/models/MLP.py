@@ -1,4 +1,4 @@
-import lightning as L
+import lightning as L  # noqa: N999
 import torch
 from torch import nn
 
@@ -70,22 +70,7 @@ class MLPModel(L.LightningModule):
         batch_size = components.shape[0]
 
         if self.measurement_dropout is not None:
-            if self.training:
-                dropout = torch.rand(
-                    batch_size, device=measurements.device) < self.measurement_dropout["prob"]
-                k_dropped = torch.randint(
-                    1, self.measurement_dropout["max_drop"] + 1, (batch_size, ), device=measurements.device)
-                rank = torch.rand_like(measurements).argsort(-1)
-                mask = torch.logical_and(
-                    rank < k_dropped[:, None], dropout[:, None])
-                masked_measurements = measurements.clone()
-                masked_measurements[mask] = 0
-            else:
-                masked_measurements = measurements
-                mask = torch.zeros_like(measurements)
-
-            pred_components = self.model(torch.concat(
-                (masked_measurements, mask.float()), dim=-1))
+            pred_components = self.drop_measurements(measurements)
         else:
             pred_components = self.model(measurements)
 
@@ -125,6 +110,26 @@ class MLPModel(L.LightningModule):
                              batch_size=batch_size, reduce_fx="max")
 
         return loss
+
+    def drop_measurements(self, measurements):
+        batch_size = measurements.shape[0]
+        if self.training:
+            dropout = torch.rand(
+                batch_size, device=measurements.device) < self.measurement_dropout["prob"]
+            k_dropped = torch.randint(
+                1, self.measurement_dropout["max_drop"] + 1, (batch_size, ), device=measurements.device)
+            rank = torch.rand_like(measurements).argsort(-1)
+            mask = torch.logical_and(
+                rank < k_dropped[:, None], dropout[:, None])
+            masked_measurements = measurements.clone()
+            masked_measurements[mask] = 0
+        else:
+            masked_measurements = measurements
+            mask = torch.zeros_like(measurements)
+
+        pred_components = self.model(torch.concat(
+            (masked_measurements, mask.float()), dim=-1))
+        return pred_components
 
     def _plausibility(self, components):
         return (components @ self.plausibility_mat + self.plausibility_vec).abs()
