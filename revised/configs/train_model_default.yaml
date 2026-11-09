@@ -1,0 +1,13 @@
+defaults:
+  - data: default
+  - model: mlp
+  - logger: wandb
+  - trainer: default
+  - _self_
+
+seed: 42
+surrogate_checkpoint: null
+surrogate_arch:
+  width: 256
+  depth: 3
+  activation: GELU

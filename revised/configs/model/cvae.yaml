@@ -1,0 +1,22 @@
+_target_: models.CVAE.CVAEModel
+z_dim: 4
+encoder_width: 256
+decoder_width: 256
+encoder_depth: 4
+decoder_depth: 4
+encoder_dropout: 0.0
+decoder_dropout: 0.0
+activation: GELU
+surrogate_details: ${surrogate_arch}
+measurement_dropout: null
+w_measure: 1
+w_components: 1
+w_plausibility: 10
+w_kl_div: 0.1
+kl_warmup: 10
+w_prior: 1
+lr: 5.0e-3
+weight_decay: 1.0e-5
+_partial_: true
+
+# Must pass in n_components, n_measurements, plausibility and measurement_std

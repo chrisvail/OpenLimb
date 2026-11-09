@@ -48,7 +48,8 @@ class MLPModel(L.LightningModule):
         self.register_buffer("plausibility_mat", plausibility_mat)
         self.register_buffer("plausibility_vec", plausibility_vec)
 
-        self.surrogate = SurrogateMeasurementModel(**surrogate_details)
+        self.surrogate = SurrogateMeasurementModel(
+            n_components, n_measurements, measurement_std=measurement_std, **surrogate_details)
         self.surrogate.requires_grad_(False)
 
         self.w_measure = w_measure

@@ -1,0 +1,9 @@
+_target_: models.surrogate.SurrogateMeasurementModel
+_partial_: true
+width: ${surrogate_arch.width}
+depth: ${surrogate_arch.depth}
+activation: ${surrogate_arch.activation}
+lr: 5.0e-3
+weight_decay: 1.0e-5
+
+# Must pass in n_components, n_measurements and measurement_std

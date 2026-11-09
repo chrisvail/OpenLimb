@@ -1,0 +1,15 @@
+_target_: models.MLP.MLPModel
+_partial_: true
+width: 256
+depth: 4
+mlp_dropout: 0.0
+activation: GELU
+surrogate_details: ${surrogate_arch}
+measurement_dropout: null 
+w_measure: 1
+w_components: 1
+w_plausibility: 10
+lr: 5.0e-3
+weight_decay: 1.0e-5
+
+# Must pass in n_components, n_measurements, plausibility and measurement_std

@@ -1,0 +1,53 @@
+# configs/trainer/default.yaml
+_target_: lightning.pytorch.Trainer
+
+# --- Run length -------------------------------------------------------
+max_steps: 5000
+max_epochs: -1                    # unlimited; max_steps decides
+min_steps: null
+max_time: null                    # "DD:HH:MM:SS"
+
+# --- Hardware ---------------------------------------------------------
+accelerator: gpu
+devices: 1
+strategy: auto
+precision: 32-true                # later: bf16-mixed
+benchmark: false                  # cuDNN autotune; keep off with variable mesh sizes
+deterministic: false
+
+# --- Optimisation -----------------------------------------------------
+gradient_clip_val: 1.0            # TUNE
+gradient_clip_algorithm: norm
+accumulate_grad_batches: 1
+
+# --- Validation (inactive until you add validation_step) --------------
+val_check_interval: null          # int = every N train steps
+check_val_every_n_epoch: null     # must be null if val_check_interval exceeds an epoch
+limit_val_batches: null
+num_sanity_val_steps: 2
+
+# --- Data -------------------------------------------------------------
+reload_dataloaders_every_n_epochs: 0
+
+# --- Output & logging -------------------------------------------------
+default_root_dir: ${hydra:runtime.output_dir}
+log_every_n_steps: 1
+enable_checkpointing: true
+enable_progress_bar: true
+enable_model_summary: true
+
+# --- Debugging --------------------------------------------------------
+fast_dev_run: false
+overfit_batches: 0
+detect_anomaly: false
+profiler: null                    # "simple" or "advanced"
+
+# --- Checkpoints ------------------------------------------------------
+# In your trainer config, alongside your existing settings
+callbacks:
+  - _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    dirpath: ${hydra:runtime.output_dir}/checkpoints
+    filename: "{epoch}-{step}"
+    save_last: true        # always keeps last.ckpt, which inference.py looks for
+    save_top_k: -1         # with no monitor, keep every periodic snapshot
+    every_n_train_steps: 1000     # adjust so you end up with roughly 5-20 snapshots in total

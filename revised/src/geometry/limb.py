@@ -25,8 +25,13 @@ class LimbDataModule(L.LightningDataModule):
         self.train_sampler = OpenLimbSampler(
             batch_size, seed, self.data_dir, scale)
 
+        self.n_components = self.train_sampler.n_components
+
+        measurement_details = get_measurement_details(
+            self.data_dir, torch.float64)
+        self.n_measurements = len(measurement_details)
         self.measure = Measure(self.train_sampler.edge2vert,
-                               self.train_sampler.face2edge, get_measurement_details(self.data_dir, torch.float64), self.data_dir)
+                               self.train_sampler.face2edge, measurement_details, self.data_dir)
 
     def train_dataloader(self):
         dataset = _StreamingDataset(
