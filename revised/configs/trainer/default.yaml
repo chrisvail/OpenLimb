@@ -2,7 +2,7 @@
 _target_: lightning.pytorch.Trainer
 
 # --- Run length -------------------------------------------------------
-max_steps: 5000
+max_steps: 20000
 max_epochs: -1                    # unlimited; max_steps decides
 min_steps: null
 max_time: null                    # "DD:HH:MM:SS"

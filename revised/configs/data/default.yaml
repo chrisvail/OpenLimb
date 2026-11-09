@@ -1,5 +1,5 @@
 _target_: geometry.limb.LimbDataModule
-data_dir: ${hydra:runtime.cwd}/data_components
+data_dir: ${hydra:runtime.cwd}/../data_components
 batch_size: 512
 train_batches: ${trainer.max_steps}
 val_batches: 4

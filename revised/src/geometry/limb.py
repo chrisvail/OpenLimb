@@ -15,8 +15,10 @@ class LimbDataModule(L.LightningDataModule):
         self.save_hyperparameters()
         self.data_dir = Path(data_dir)
         self.batch_size = batch_size
+        self.val_seed = val_seed
         self.test_seed = test_seed
         self.train_batches = train_batches
+        self.val_batches = val_batches
         self.test_batches = test_batches
         self.normalise_components, self.normalise_measurements = normalise_components, normalise_measurements
         self.scale = scale
