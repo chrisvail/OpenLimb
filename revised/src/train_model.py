@@ -47,5 +47,6 @@ def main(cfg: DictConfig):
 
 if __name__ == "__main__":
     main()
-    # Run from in revised
-    # python src/train_model.py -m model=mlp,cvae seed=range(5) surrogate_checkpoint=/path/to/surrogate.ckpt
+    # Run from inside revised
+    # Quotes around measurement_dropout is important.
+    # python src/train_model.py -m model=mlp,cvae seed=range(5) surrogate_checkpoint=/path/to/surrogate.ckpt 'model.measurement_dropout={prob:0.3,max_drop:2}'

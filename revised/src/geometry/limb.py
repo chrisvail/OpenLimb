@@ -54,6 +54,9 @@ class LimbDataModule(L.LightningDataModule):
             test_sampler, self.measure, self.test_batches, self.normalise_components, self.normalise_measurements)
         return DataLoader(dataset, batch_size=None, shuffle=False, num_workers=0)
 
+    def predict_dataloader(self):
+        return self.test_dataloader()
+
 
 class _StreamingDataset(IterableDataset):
     def __init__(self, sampler: OpenLimbSampler, measure: Measure, steps: int, normalise_components: bool, normalise_measurements: bool):

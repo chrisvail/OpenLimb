@@ -135,3 +135,15 @@ class Measure(nn.Module):
             return {"mean": self.scaled_mean, "std": self.scaled_std}
         else:
             return {"mean": self.unscaled_mean, "std": self.unscaled_std}
+
+    def normalise(self, measurements, scaled=True):
+        if scaled:
+            return (measurements - self.scaled_mean) / self.scaled_std
+        else:
+            return (measurements - self.unscaled_mean) / self.unscaled_std
+
+    def denormalise(self, measurements, scaled=True):
+        if scaled:
+            return (measurements * self.scaled_std) + self.scaled_mean
+        else:
+            return (measurements * self.unscaled_std) + self.unscaled_mean

@@ -107,7 +107,7 @@ class CVAEModel(L.LightningModule):
             dropout = torch.rand(
                 batch_size, device=measurements.device) < self.measurement_dropout["prob"]
             k_dropped = torch.randint(
-                1, self.measurement_dropout["max_drop"] + 1, (batch_size, ), device=measurements.device)
+                self.measurement_dropout.get("min_drop", 1), self.measurement_dropout["max_drop"] + 1, (batch_size, ), device=measurements.device)
             rank = torch.rand_like(measurements).argsort(-1)
             mask = torch.logical_and(
                 rank < k_dropped[:, None], dropout[:, None])
@@ -283,6 +283,25 @@ class CVAEModel(L.LightningModule):
 
         self.train(was_training)
         return pred_components.reshape((batch_size, n, -1))
+
+    @torch.no_grad()
+    def predict_step(self, batch):
+        _components, measurements = batch
+        batch_size = measurements.shape[0]
+        if self.measurement_dropout is not None:
+            mask = torch.isnan(measurements)
+            masked_measurements = measurements.masked_fill(mask, 0)
+            inputs = torch.concat(
+                (masked_measurements, mask.float()), dim=-1)
+        else:
+            inputs = measurements
+
+        # Deterministic case. Use sample if wanting sampled version
+        z = torch.zeros((batch_size, self.z_dim),
+                        device=measurements.device, dtype=measurements.dtype)
+        pred_components = self.decoder(inputs, z)
+
+        return pred_components
 
     @torch.no_grad()
     def _check_spread(self, measurements, n=8):

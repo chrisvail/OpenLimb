@@ -1,0 +1,9 @@
+defaults:
+  - data: default
+  - model: mlp
+  - logger: offline
+  - trainer: default
+  - _self_
+
+seed: 42
+model_checkpoint: ${hydra:runtime.cwd}/outputs/

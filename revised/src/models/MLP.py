@@ -118,7 +118,7 @@ class MLPModel(L.LightningModule):
             dropout = torch.rand(
                 batch_size, device=measurements.device) < self.measurement_dropout["prob"]
             k_dropped = torch.randint(
-                1, self.measurement_dropout["max_drop"] + 1, (batch_size, ), device=measurements.device)
+                self.measurement_dropout.get("min_drop", 1), self.measurement_dropout["max_drop"] + 1, (batch_size, ), device=measurements.device)
             rank = torch.rand_like(measurements).argsort(-1)
             mask = torch.logical_and(
                 rank < k_dropped[:, None], dropout[:, None])
@@ -130,6 +130,20 @@ class MLPModel(L.LightningModule):
 
         pred_components = self.model(torch.concat(
             (masked_measurements, mask.float()), dim=-1))
+        return pred_components
+
+    @torch.no_grad()
+    def predict_step(self, batch):
+        _components, measurements = batch
+
+        if self.measurement_dropout is not None:
+            mask = torch.isnan(measurements)
+            masked_measurements = measurements.masked_fill(mask, 0)
+            pred_components = self.model(torch.concat(
+                (masked_measurements, mask.float()), dim=-1))
+        else:
+            pred_components = self.model(measurements)
+
         return pred_components
 
     def _plausibility(self, components):
