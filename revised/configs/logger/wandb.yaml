@@ -1,8 +1,7 @@
 _target_: lightning.pytorch.loggers.WandbLogger
 project: 1D to 3D Data
-name: ${now:%Y-%m-%d_%H-%M-%S}   # or ${experiment_name}
 save_dir: ${hydra:runtime.output_dir}
 log_model: false                 # "all" or true to upload checkpoints as artifacts
 offline: false                    # Dont send it all up.
 group: null
-tags: []
+_partial_: true
