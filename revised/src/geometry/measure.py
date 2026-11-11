@@ -88,7 +88,7 @@ class Measure(nn.Module):
     Measurement details can comprise of circumfrential measurements, widths and lengths.
     """
 
-    def __init__(self, edge2vert, face2edge, details, data_dir):
+    def __init__(self, edge2vert, face2edge, details, data_dir=None):
         super().__init__()
 
         self.details = details
@@ -108,14 +108,15 @@ class Measure(nn.Module):
                 self.measures.append(
                     partial(measure_length, v1=dt["v1"], v2=dt["v2"], direction=dt["direction"]))
 
-        scaled_transform = torch.load(
-            data_dir / "scaled_measurement_transforms.pt")
-        self.scaled_mean, self.scaled_std = scaled_transform["mean"], scaled_transform["std"]
+        if data_dir is not None:
+            scaled_transform = torch.load(
+                data_dir / "scaled_measurement_transforms.pt")
+            self.scaled_mean, self.scaled_std = scaled_transform["mean"], scaled_transform["std"]
 
-        unscaled_transform = torch.load(
-            data_dir / "unscaled_measurement_transforms.pt")
-        self.unscaled_mean, self.unscaled_std = unscaled_transform[
-            "mean"], unscaled_transform["std"]
+            unscaled_transform = torch.load(
+                data_dir / "unscaled_measurement_transforms.pt")
+            self.unscaled_mean, self.unscaled_std = unscaled_transform[
+                "mean"], unscaled_transform["std"]
 
     def __call__(self, x, normalise=True, scaled=True):
         if x.dim() == 2:
@@ -126,23 +127,29 @@ class Measure(nn.Module):
             return meas
 
         if scaled:
-            return (meas - self.scaled_mean) / self.scaled_std
+            return self.normalise(meas, True)
         else:
-            return (meas - self.unscaled_mean) / self.unscaled_std
+            return self.normalise(meas, False)
 
     def get_transforms(self, scaled=True):
+        if not hasattr(self, "scaled_mean"):
+            raise ValueError("No data dir supplied")
         if scaled:
             return {"mean": self.scaled_mean, "std": self.scaled_std}
         else:
             return {"mean": self.unscaled_mean, "std": self.unscaled_std}
 
     def normalise(self, measurements, scaled=True):
+        if not hasattr(self, "scaled_mean"):
+            raise ValueError("No data dir supplied")
         if scaled:
             return (measurements - self.scaled_mean) / self.scaled_std
         else:
             return (measurements - self.unscaled_mean) / self.unscaled_std
 
     def denormalise(self, measurements, scaled=True):
+        if not hasattr(self, "scaled_mean"):
+            raise ValueError("No data dir supplied")
         if scaled:
             return (measurements * self.scaled_std) + self.scaled_mean
         else:

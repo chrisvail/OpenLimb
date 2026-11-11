@@ -1,5 +1,6 @@
 """Main runner."""
 import warnings
+from datetime import datetime
 
 import hydra
 import lightning as L
@@ -23,6 +24,7 @@ def main(cfg: DictConfig):
     measurement_transforms = data.measure.get_transforms(True)
 
     model = hydra.utils.instantiate(cfg.model)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if not ("surrogate" in cfg.model._target_.lower()):
         model = model(n_components=n_components, n_measurements=n_measurements,
@@ -35,7 +37,10 @@ def main(cfg: DictConfig):
         model = model(n_components=n_components, n_measurements=n_measurements,
                       measurement_std=measurement_transforms["std"])
 
-    logger = hydra.utils.instantiate(cfg.logger)
+    logger = hydra.utils.instantiate(cfg.logger)(
+        name=f"{cfg.experiment}_{cfg.model._target_.split(".")[-1]}_s{cfg.seed}_{timestamp}",
+        tags=[cfg.model._target_.split(".")[-1], timestamp, "v1", "train"]
+        )
     logger.experiment.config.update(
         OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         allow_val_change=True,

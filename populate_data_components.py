@@ -188,7 +188,7 @@ def get_verts(components, mean_verts, raw_components):
 
 
 def measure_all(components, measure, mean_verts, raw_components, chunk=128):
-    return torch.cat([measure(get_verts(c, mean_verts, raw_components)) for c in components.split(chunk)])
+    return torch.cat([measure(get_verts(c, mean_verts, raw_components), False) for c in components.split(chunk)])
 
 
 def mean_std(x):
