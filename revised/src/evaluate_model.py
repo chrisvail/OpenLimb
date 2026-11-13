@@ -37,7 +37,10 @@ def main(cfg: DictConfig):
     test_loader = data.test_dataloader()
 
     if not ("gauss_newton" in cfg.model._target_.lower()):
-        logger = hydra.utils.instantiate(cfg.logger)
+        logger = hydra.utils.instantiate(cfg.logger)(
+            name=f"{cfg.experiment}_{cfg.model._target_.split(".")[-1]}_s{cfg.seed}_{time_stamp}",
+            tags=[cfg.model._target_.split(".")[-1], time_stamp, "v1", "train"]
+            )
         logger.experiment.config.update(
             OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
             allow_val_change=True,
