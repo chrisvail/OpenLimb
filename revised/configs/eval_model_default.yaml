@@ -8,6 +8,14 @@ defaults:
 seed: 42
 experiment: 1D23D_Data
 model_checkpoint: ${hydra:runtime.cwd}/outputs/
+weights: 
+  - 0.4919057086055098
+  - 0.1823345640443056
+  - 0.10905992615734167
+  - 0.08633910820789548
+  - 0.028117012212439646
+  - 0.039477421187162735
+  - 0.06276625958534507
 surrogate_arch:
   width: 256
   depth: 3

@@ -1,6 +1,7 @@
 _target_: data.measurement_data.MeasurementDataModule
 data_path: ${hydra:runtime.cwd}/data/1D_Limb_Data.csv
+measure_data_dir: ${hydra:runtime.cwd}/../data_components
 batch_size: 512
 n_nulls: 0
 normalise: true
-_partial_: true
+scale: true

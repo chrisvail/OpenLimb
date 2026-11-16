@@ -4,8 +4,8 @@ import lightning as L
 import torch
 from torch.utils.data import DataLoader, Dataset, IterableDataset, get_worker_info
 
-from geometry.measure import Measure
-from geometry.sampler import OpenLimbSampler
+from data.measure import Measure
+from data.sampler import OpenLimbSampler
 
 
 class LimbDataModule(L.LightningDataModule):

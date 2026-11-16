@@ -7,8 +7,8 @@ from pathlib import Path
 import hydra
 import lightning as L
 import torch
-from geometry.measure import Measure
-from geometry.sampler import OpenLimbSampler
+from data.measure import Measure
+from data.sampler import OpenLimbSampler
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -62,8 +62,8 @@ def main(cfg: DictConfig):
         if model.measurement_dropout is not None:
             # Model has dropout so lets analyse that
             datasets = {
-                "random_drop_1": {"mode": "random", "drop_num": 1},
-                "random_drop_2": {"mode": "random", "drop_num": 2},
+                "random_drop_1": {"mode": "random", "drop_num": 1, "weights": cfg.weights},
+                "random_drop_2": {"mode": "random", "drop_num": 2, "weights": cfg.weights},
                 **{f"index_drop_1({i})": {"mode": "index", "idxs": (i,)}
                    for i in range(n_measurements)},
                 **{f"index_drop_2({x[0]}_{x[1]})": {"mode": "index", "idxs": x} for x in combinations(range(n_measurements), 2)}
@@ -93,8 +93,8 @@ def main(cfg: DictConfig):
 
         # Dropout
         datasets = {
-            "random_drop_1": {"mode": "random", "drop_num": 1},
-            "random_drop_2": {"mode": "random", "drop_num": 2},
+            "random_drop_1": {"mode": "random", "drop_num": 1, "weights": cfg.weights},
+            "random_drop_2": {"mode": "random", "drop_num": 2, "weights": cfg.weights},
             **{f"index_drop_1({i})": {"mode": "index", "idxs": (i,)}
                 for i in range(n_measurements)},
             **{f"index_drop_2({x[0]}_{x[1]})": {"mode": "index", "idxs": x} for x in combinations(range(n_measurements), 2)}
@@ -118,15 +118,24 @@ def main(cfg: DictConfig):
 
 
 class EvaluationDataLoader(Dataset):
-    def __init__(self, dataset, mode, idxs=None, drop_num=0):
+    def __init__(self, dataset, mode, idxs=None, drop_num=0, weights=None):
         self.dataset = dataset
-        batch_size, n_measurements = self.dataset[0][1].shape
+        batch_size, n_measurements = next(iter(self.dataset))[1].shape
 
         if mode == "random":
             gen = torch.Generator()
             gen.manual_seed(5657)
-            self.masks = torch.rand(
-                (len(dataset), batch_size, n_measurements), generator=gen).argsort(-1) < drop_num
+            if weights is None:
+                self.masks = torch.rand(
+                    (len(dataset), batch_size, n_measurements), generator=gen).argsort(-1) < drop_num
+            else:
+                w = torch.as_tensor(weights, dtype=torch.float32)
+                n_rows = len(dataset) * batch_size
+                idx = torch.multinomial(
+                    w.expand(n_rows, -1), drop_num, replacement=False, generator=gen)
+                self.masks = torch.zeros(
+                    n_rows, n_measurements, dtype=torch.bool).scatter_(1, idx, True)
+                self.masks = self.masks.view(len(dataset), batch_size, n_measurements)
         elif mode == "index":
             self.masks = torch.zeros(
                 (len(dataset), batch_size, n_measurements), dtype=torch.bool)
@@ -137,7 +146,7 @@ class EvaluationDataLoader(Dataset):
 
     def __getitem__(self, idx):
         components, measurements = self.dataset[idx]
-        return components, measurements.masked_fill(self.masks[idx], torch.nan)
+        return components, measurements.masked_fill(self.masks[idx, :len(measurements)], torch.nan)
 
 
 def save_results(cfg, time_stamp, sampler, measure, pred_components):
@@ -157,7 +166,7 @@ def get_file_path(cfg, time_stamp, suffix=""):
     eval_path = Path(__file__).parent.parent / "evaluations"
     out_dir = eval_path / model_name
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{time_stamp}_seed{cfg.seed}_{suffix}.pt"
+    path = out_dir / f"{time_stamp}_seed{cfg.seed}{"_" if suffix else ""}{suffix}.pt"
     return path
 
 
