@@ -47,7 +47,10 @@ def main(cfg: DictConfig):
     )
 
     trainer: L.Trainer = hydra.utils.instantiate(cfg.trainer, logger=logger)
-    trainer.fit(model, data)
+    try:
+        trainer.fit(model, data)
+    finally:
+        logger.finish() 
 
 
 if __name__ == "__main__":

@@ -4,5 +4,4 @@ save_dir: ${hydra:runtime.output_dir}
 log_model: false                 # "all" or true to upload checkpoints as artifacts
 offline: true                    # Dont send it all up.
 group: null
-tags: []
 _partial_: true
