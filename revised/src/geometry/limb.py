@@ -9,8 +9,21 @@ from geometry.sampler import OpenLimbSampler
 
 
 class LimbDataModule(L.LightningDataModule):
-    def __init__(self, data_dir: Path, scale: bool = True, batch_size: int = 512, train_batches: int = 512, val_batches=4, test_batches: int = 16,
-                 seed: int = 2441, val_seed=9001, test_seed: int = 7393, num_workers: int = 0, normalise_components: bool = True, normalise_measurements: bool = True):
+    def __init__(
+        self,
+        data_dir: Path,
+        scale: bool = True,
+        batch_size: int = 512,
+        train_batches: int = 512,
+        val_batches=4,
+        test_batches: int = 16,
+        seed: int = 2441,
+        val_seed=9001,
+        test_seed: int = 7393,
+        num_workers: int = 0,
+        normalise_components: bool = True,
+        normalise_measurements: bool = True,
+    ):
         super().__init__()
         self.save_hyperparameters()
         self.data_dir = Path(data_dir)
@@ -20,46 +33,94 @@ class LimbDataModule(L.LightningDataModule):
         self.train_batches = train_batches
         self.val_batches = val_batches
         self.test_batches = test_batches
-        self.normalise_components, self.normalise_measurements = normalise_components, normalise_measurements
+        self.normalise_components, self.normalise_measurements = (
+            normalise_components,
+            normalise_measurements,
+        )
         self.scale = scale
         self.num_workers = num_workers
 
-        self.train_sampler = OpenLimbSampler(
-            batch_size, seed, self.data_dir, scale)
+        self.train_sampler = OpenLimbSampler(batch_size, seed, self.data_dir, scale)
 
         self.n_components = self.train_sampler.n_components
 
-        measurement_details = get_measurement_details(
-            self.data_dir, torch.float64)
+        measurement_details = get_measurement_details(self.data_dir, torch.float64)
         self.n_measurements = len(measurement_details)
-        self.measure = Measure(self.train_sampler.edge2vert,
-                               self.train_sampler.face2edge, measurement_details, self.data_dir)
+        self.measure = Measure(
+            self.train_sampler.edge2vert,
+            self.train_sampler.face2edge,
+            measurement_details,
+            self.data_dir,
+        )
 
     def train_dataloader(self):
         dataset = _StreamingDataset(
-            self.train_sampler, self.measure, self.train_batches, self.normalise_components, self.normalise_measurements)
-        return DataLoader(dataset, batch_size=None, shuffle=False, num_workers=self.num_workers)
+            self.train_sampler,
+            self.measure,
+            self.train_batches,
+            self.normalise_components,
+            self.normalise_measurements,
+        )
+        return DataLoader(
+            dataset,
+            batch_size=None,
+            shuffle=False,
+            num_workers=self.num_workers,
+            worker_init_fn=worker_init_func,
+            persistent_workers=self.num_workers > 0,
+            prefetch_factor=4 if self.num_workers > 0 else None,
+            pin_memory=True,
+        )
 
     def val_dataloader(self):
         val_sampler = OpenLimbSampler(
-            self.batch_size, self.val_seed, self.data_dir, self.scale)
+            self.batch_size, self.val_seed, self.data_dir, self.scale
+        )
         dataset = _FixedDataset(
-            val_sampler, self.measure, self.val_batches, self.normalise_components, self.normalise_measurements)
-        return DataLoader(dataset, batch_size=None, shuffle=False, num_workers=0)
+            val_sampler,
+            self.measure,
+            self.val_batches,
+            self.normalise_components,
+            self.normalise_measurements,
+        )
+        return DataLoader(
+            dataset,
+            batch_size=None,
+            shuffle=False,
+            num_workers=0,
+        )
 
     def test_dataloader(self):
         test_sampler = OpenLimbSampler(
-            self.batch_size, self.test_seed, self.data_dir, self.scale)
+            self.batch_size, self.test_seed, self.data_dir, self.scale
+        )
         dataset = _FixedDataset(
-            test_sampler, self.measure, self.test_batches, self.normalise_components, self.normalise_measurements)
-        return DataLoader(dataset, batch_size=None, shuffle=False, num_workers=0)
+            test_sampler,
+            self.measure,
+            self.test_batches,
+            self.normalise_components,
+            self.normalise_measurements,
+        )
+        return DataLoader(
+            dataset,
+            batch_size=None,
+            shuffle=False,
+            num_workers=0,
+        )
 
     def predict_dataloader(self):
         return self.test_dataloader()
 
 
 class _StreamingDataset(IterableDataset):
-    def __init__(self, sampler: OpenLimbSampler, measure: Measure, steps: int, normalise_components: bool, normalise_measurements: bool):
+    def __init__(
+        self,
+        sampler: OpenLimbSampler,
+        measure: Measure,
+        steps: int,
+        normalise_components: bool,
+        normalise_measurements: bool,
+    ):
         super().__init__()
         self.sampler = sampler
         self.measure = measure
@@ -67,25 +128,36 @@ class _StreamingDataset(IterableDataset):
         self.normalise_components = normalise_components
         self.normalise_measurements = normalise_measurements
         self._seeded = False
+        self.state = None
 
     def __len__(self):
         return self.steps
 
-    def __iter__(self):
+    def _init_worker(self):
         info = get_worker_info()
         wid, nw = (info.id, info.num_workers) if info else (0, 1)
+
+        self.state = {"wid": wid, "nw": nw}
+
+    def __iter__(self):
+        if self.state is None:
+            self._init_worker()
 
         if not self._seeded:
             # + 1 so it doesnt collide with the test dataset
             self.sampler.generator.manual_seed(
-                self.sampler.seed * 3581 + wid + 1)
+                self.sampler.seed * 3581 + self.state["wid"] + 1
+            )
             self._seeded = True
 
-        for _ in range(wid, self.steps, nw):
+        for _ in range(self.state["wid"], self.steps, self.state["nw"]):
             components = self.sampler.sample()
             with torch.no_grad():
-                measurements = self.measure(self.sampler.to_mesh(
-                    components, False)[0], self.normalise_measurements, self.sampler.scale)
+                measurements = self.measure(
+                    self.sampler.to_mesh(components, False)[0],
+                    self.normalise_measurements,
+                    self.sampler.scale,
+                )
 
                 if self.normalise_components:
                     components = self.sampler.normalise_components(components)
@@ -93,21 +165,44 @@ class _StreamingDataset(IterableDataset):
             yield components.to(torch.float32), measurements.to(torch.float32)
 
 
+def worker_init_func(_worker_id):
+    torch.set_num_threads(1)
+    try:
+        from threadpoolctl import threadpool_limits  # noqa: PLC0415
+
+        threadpool_limits(
+            1,
+        )  # caps OpenBLAS/MKL/OpenMP already loaded via numpy/scipy
+    except ImportError:
+        pass
+
+
 class _FixedDataset(Dataset):
-    def __init__(self, sampler: OpenLimbSampler, measure: Measure, batches, normalise_components: bool, normalise_measurements: bool):
+    def __init__(
+        self,
+        sampler: OpenLimbSampler,
+        measure: Measure,
+        batches,
+        normalise_components: bool,
+        normalise_measurements: bool,
+    ):
         super().__init__()
         self.batches = []
         for _ in range(batches):
             components = sampler.sample()
             with torch.no_grad():
-                measurements = measure(sampler.to_mesh(
-                    components, False)[0], normalise_measurements, sampler.scale)
+                measurements = measure(
+                    sampler.to_mesh(components, False)[0],
+                    normalise_measurements,
+                    sampler.scale,
+                )
 
                 if normalise_components:
                     components = sampler.normalise_components(components)
 
                 self.batches.append(
-                    (components.to(torch.float32), measurements.to(torch.float32)))
+                    (components.to(torch.float32), measurements.to(torch.float32))
+                )
 
     def __len__(self):
         return len(self.batches)
@@ -182,10 +277,10 @@ def get_measurement_details(data_dir, dtype):
 if __name__ == "__main__":
     # cd revised/src && uv run python -m geometry.limb
     data_dir = Path("../../data_components")
-    dm = LimbDataModule(data_dir, num_workers=2,
-                        train_batches=8, test_batches=2)
+    dm = LimbDataModule(data_dir, num_workers=2, train_batches=8, test_batches=2)
     # expect (512, 11) and (512, 7), float32
     c, m = next(iter(dm.train_dataloader()))
     t = list(dm.test_dataloader())
-    assert all(torch.equal(a[0], b[0]) for a, b in zip(
-        t, dm.test_dataloader()))   # same test data each call
+    assert all(
+        torch.equal(a[0], b[0]) for a, b in zip(t, dm.test_dataloader())
+    )  # same test data each call

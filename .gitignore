@@ -6,6 +6,8 @@ __pycache__
 /imgs
 /nn_meshes
 /.vscode
+/revised/data/*.csv
+/evaluations/**.pt
 
 # Python environment / tooling
 .venv/
