@@ -1,7 +1,7 @@
 import torch
-
-from ..geometry.measure import Measure
-from ..geometry.sampler import OpenLimbSampler
+from geometry.measure import Measure
+from geometry.sampler import OpenLimbSampler
+from tqdm import tqdm
 
 
 class GaussNewton:
@@ -33,7 +33,7 @@ class GaussNewton:
 
         return torch.stack(
             [self._process_one(init, m.double(), iterations)
-             for m, init in zip(measurements, initialisation, strict=True)],
+             for m, init in tqdm(zip(measurements, initialisation, strict=True))],
             dim=0
         )
 

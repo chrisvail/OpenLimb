@@ -8,8 +8,8 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 # Suppress the PyTorch / Lightning deprecation and performance warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
+# warnings.filterwarnings("ignore", category=FutureWarning)
+# warnings.filterwarnings("ignore", category=UserWarning)
 
 
 @hydra.main(config_path="../configs", config_name="train_model_default", version_base="1.3")

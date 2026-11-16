@@ -6,4 +6,9 @@ defaults:
   - _self_
 
 seed: 42
+experiment: 1D23D_Data
 model_checkpoint: ${hydra:runtime.cwd}/outputs/
+surrogate_arch:
+  width: 256
+  depth: 3
+  activation: GELU

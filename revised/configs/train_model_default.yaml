@@ -7,7 +7,7 @@ defaults:
 
 seed: 42
 experiment: 1D23D_Data
-surrogate_checkpoint: ${hydra:runtime.cwd}/multirun/2026-11-11/09-00-10/0/checkpoints/last.ckpt
+surrogate_checkpoint: ${hydra:runtime.cwd}/multirun/2026-11-11/08-04-13/4/checkpoints/last.ckpt
 surrogate_arch:
   width: 256
   depth: 3
