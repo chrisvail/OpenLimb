@@ -384,6 +384,9 @@ def annotate(cfg):
     cache = {}
 
     def payload(V, F):
+        F, c = np.asarray(F), V.mean(0)
+        if np.einsum("ij,ij->i", V[F[:, 0]] - c, np.cross(V[F[:, 1]] - c, V[F[:, 2]] - c)).sum() < 0:
+            F = F[:, ::-1]                                  # inward winding -> outward (display only)
         V = np.asarray(V, np.float32)
         return {"v": base64.b64encode(V.tobytes()).decode(), "f": base64.b64encode(np.asarray(F, np.uint32).tobytes()).decode(),
                 "center": ((V.max(0) + V.min(0)) / 2).tolist()}

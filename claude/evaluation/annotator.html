@@ -105,24 +105,28 @@ class Viewer {
     this.canvas = canvas; this.interactive = interactive;
     this.r = new THREE.WebGLRenderer({canvas, antialias: true}); this.r.setClearColor(0x15171a);
     this.s = new THREE.Scene(); this.cam = new THREE.PerspectiveCamera(40, 1, 0.1, 1e5);
-    this.s.add(new THREE.AmbientLight(0xffffff, 0.7)); const dl = new THREE.DirectionalLight(0xffffff, 0.6);
-    dl.position.set(1, 2, 3); this.s.add(dl);
+    this.s.add(new THREE.AmbientLight(0xffffff, 0.3));
+    for (const [x, y, k] of [[0.5, 1, 0.7], [-0.6, -0.8, 0.25]]) {     // key + fill, fixed to the camera (headlight)
+      const l = new THREE.DirectionalLight(0xffffff, k); l.position.set(x, y, 0); l.target.position.set(0, 0, -1);
+      this.cam.add(l, l.target); }
+    this.s.add(this.cam);                                              // camera must be in the scene for its children to render
     this.ctl = new THREE.OrbitControls(this.cam, canvas); this.ctl.enableDamping = false;
-    this.overlay = new THREE.Group(); this.s.add(this.overlay); this.mesh = null; this.radius = 100;
+    this.overlay = new THREE.Group(); this.s.add(this.overlay); this.mesh = null; this.back = null; this.radius = 100;
     this.opacity = 0.35; this.wire = false; this.psz = 1; this.showPlanes = true;
     this.ctl.addEventListener('change', () => this.render());
   }
   setMesh(V, F, center) {                              // V Float32 (original frame), rendered centred
-    if (this.mesh) { this.s.remove(this.mesh); this.mesh.geometry.dispose(); }
+    if (this.mesh) { this.s.remove(this.back, this.mesh); this.mesh.geometry.dispose(); }
     this.V = V; this.F = F; this.center = center;
     const P = new Float32Array(V.length);
     for (let i = 0; i < V.length; i += 3) for (let k = 0; k < 3; k++) P[i+k] = V[i+k] - center[k];
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3));
     g.setIndex(new THREE.BufferAttribute(F, 1)); g.computeVertexNormals(); g.computeBoundingSphere();
     this.radius = g.boundingSphere.radius;
-    this.mat = new THREE.MeshPhongMaterial({color: 0xc9b8a8, transparent: true, opacity: this.opacity,
-      depthWrite: false, side: THREE.DoubleSide, wireframe: this.wire});
-    this.mesh = new THREE.Mesh(g, this.mat); this.s.add(this.mesh);
+    const mat = side => new THREE.MeshPhongMaterial({color: 0xc9b8a8, side});
+    this.back = new THREE.Mesh(g, mat(THREE.BackSide)); this.mesh = new THREE.Mesh(g, mat(THREE.FrontSide));
+    this.back.renderOrder = 0; this.mesh.renderOrder = 1;          // far wall first, near wall blended over it
+    this.s.add(this.back, this.mesh); this.setStyle();
     this.cam.position.set(this.radius*1.2, this.radius*0.8, this.radius*3.2); this.cam.near = this.radius/100;
     this.cam.far = this.radius*50; this.cam.updateProjectionMatrix(); this.ctl.target.set(0,0,0); this.ctl.update();
     this.render();
@@ -130,7 +134,10 @@ class Viewer {
   resize() { const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     this.r.setSize(w, h, false); this.cam.aspect = w/h; this.cam.updateProjectionMatrix(); this.render(); }
   render() { this.r.render(this.s, this.cam); }
-  setStyle() { if (this.mat) { this.mat.opacity = this.opacity; this.mat.wireframe = this.wire; } this.render(); }
+  setStyle() { const tr = this.opacity < 1;
+    for (const m of [this.back, this.mesh]) if (m) { if (m.material.transparent !== tr) m.material.needsUpdate = true;
+      Object.assign(m.material, {opacity: this.opacity, transparent: tr, depthWrite: !tr, wireframe: this.wire}); }
+    this.render(); }
   // draw an annotation: points (spheres), planes, slices, axis
   draw(A, active) {
     while (this.overlay.children.length) { const o = this.overlay.children.pop(); o.geometry && o.geometry.dispose(); }
@@ -181,7 +188,7 @@ class Viewer {
     const r = this.canvas.getBoundingClientRect(), m = new THREE.Vector2(
       ((ev.clientX - r.left)/r.width)*2 - 1, -((ev.clientY - r.top)/r.height)*2 + 1);
     const rc = new THREE.Raycaster(); rc.setFromCamera(m, this.cam);
-    const hit = rc.intersectObject(this.mesh, false); if (!hit.length) return null;
+    const hit = rc.intersectObjects([this.back, this.mesh], false); if (!hit.length) return null;
     const h = far ? hit[hit.length-1] : hit[0];
     return [h.point.x + this.center[0], h.point.y + this.center[1], h.point.z + this.center[2]];
   }
